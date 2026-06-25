@@ -616,6 +616,14 @@ select,input{font-family:inherit;}
   </div>
 </div></div>
 
+<div class="mo" id="mo-join-shared" onclick="bgClose(event,'mo-join-shared')"><div class="md">
+  <div class="md-title">加入共同帳本 <button class="md-close" onclick="closeMo('mo-join-shared')">✕</button></div>
+  <p style="font-size:.82rem;color:var(--text2);line-height:1.6;margin-bottom:.8rem;">請對方把帳本邀請碼傳給你，輸入後即可加入。</p>
+  <label class="ml">邀請碼</label>
+  <input class="mi" type="text" id="join-code-inp" placeholder="例：SB_ABC123" style="text-transform:uppercase;letter-spacing:.1em;font-weight:600;">
+  <button class="mb primary" onclick="joinByInviteCode(document.getElementById('join-code-inp').value)">加入帳本</button>
+</div></div>
+
 <div class="mo" id="mo-clear" onclick="bgClose(event,'mo-clear')"><div class="md">
   <div class="md-title">清除所有資料 <button class="md-close" onclick="closeMo('mo-clear')">✕</button></div>
   <p style="font-size:.87rem;color:var(--text2);line-height:1.6;margin-bottom:1rem;">將刪除所有帳本、記錄和設定。</p>
@@ -664,8 +672,8 @@ const CAT_COLORS=['#a89bbf','#8fa8b8','#c4a09a','#8fb5a0','#d4b896','#b8a8bf','#
 // ══════════════════════════════════════════
 // Supabase 設定（部署時填入，本機留空會自動用 localStorage）
 // ══════════════════════════════════════════
-const SB_URL  = 'https://xjgxlgriodjpicnsiyip.supabase.co';
-const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqZ3hsZ3Jpb2RqcGljbnNpeWlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTA5NDYsImV4cCI6MjA5Nzk2Njk0Nn0.ISh-lHn4Dinuf5656H9XuCmDrHjHe5YgRKRZzCyL3DY';
+const SB_URL  = ''; // 填入你的 Supabase Project URL
+const SB_KEY  = ''; // 填入你的 anon public key
 
 let _sb = null, _user = null;
 
@@ -690,10 +698,7 @@ async function signInGoogle(){
   if(!_sb){ toast('尚未設定 Supabase'); return; }
   await _sb.auth.signInWithOAuth({
     provider:'google',
-    options:{
-      redirectTo: location.href,
-      scopes: 'https://www.googleapis.com/auth/drive.file'
-    }
+    options:{ redirectTo: location.href }
   });
 }
 async function signOut(){
@@ -735,11 +740,73 @@ const DB={
       .select('*').eq('user_id',_user.id).order('date',{ascending:false});
     if(!error&&data) DB.saveTxs(data);
   },
+
+  // ── 共同帳本雲端操作 ──
+  async createSharedBook(book){
+    if(!isCloud()) return null;
+    const displayName=_user.user_metadata?.full_name||_user.email||'未知';
+    const {data,error}=await _sb.from('shared_books').insert({
+      id:book.id, name:book.name, created_by:_user.id, members:[],
+      member_names:{[_user.id]:displayName}, cats:book.cats, budgets:book.budgets||{}
+    }).select().single();
+    if(error){console.error('create shared book',error);return null;}
+    return data;
+  },
+
+  async fetchSharedBooks(){
+    if(!isCloud()) return [];
+    const {data,error}=await _sb.from('shared_books').select('*');
+    if(error||!data) return [];
+    return data;
+  },
+
+  async updateSharedBook(bookId,updates){
+    if(!isCloud()) return;
+    await _sb.from('shared_books').update(updates).eq('id',bookId);
+  },
+
+  async deleteSharedBook(bookId){
+    if(!isCloud()) return;
+    await _sb.from('shared_books').delete().eq('id',bookId);
+  },
+
+  async joinSharedBook(inviteCode){
+    if(!isCloud()) return {error:'需要登入才能加入共同帳本'};
+    const displayName=_user.user_metadata?.full_name||_user.email||'未知';
+    const {data,error}=await _sb.rpc('join_shared_book',{invite_code:inviteCode,display_name:displayName});
+    if(error) return {error:error.message};
+    return data;
+  },
+
+  async fetchSharedTxs(bookId){
+    if(!isCloud()) return [];
+    const {data,error}=await _sb.from('shared_transactions')
+      .select('*').eq('book_id',bookId).order('date',{ascending:false});
+    if(error||!data) return [];
+    return data;
+  },
+
+  async insertSharedTx(tx,bookId){
+    if(!isCloud()) return;
+    const whoName=_user.user_metadata?.full_name||_user.email||'我';
+    const {error}=await _sb.from('shared_transactions').insert({
+      ...tx, book_id:bookId, user_id:_user.id, who_name:whoName
+    });
+    if(error) console.error('insert shared tx',error);
+  },
+
+  async deleteSharedTx(id){
+    if(!isCloud()) return;
+    await _sb.from('shared_transactions').delete().eq('id',id);
+  },
 }
 
 
 
 let curBook='',curType='expense',curPieView='expense';
+let sharedBooks={}; // {bookId: {id,name,members,member_names,cats,...}}
+let sharedTxCache={}; // {bookId: [tx,...]}
+let isSharedBook=false; // 目前帳本是否為共同帳本
 let pickedEmoji='📦',goalEmoji='🎯',assetEmoji='🏦';
 let subMgrCatId='',subMgrType='expense';
 let allocGoalId='',assetTxId='',assetTxType='in';
@@ -791,6 +858,8 @@ async function showApp(){
     document.getElementById('mo-avatar-init').textContent=name?name[0].toUpperCase():'U';
     // 從雲端拉最新 txs
     await DB.fetchTxs();
+    // 載入雲端共同帳本
+    await loadSharedBooks();
   }
 
   // 把舊帳本的分類補上 subs（版本遷移）
@@ -812,6 +881,75 @@ async function showApp(){
 
   // 自動備份排程（每天一次）
   scheduleAutoBackup();
+}
+
+// ══════════════════════════════════════════
+// 共同帳本雲端功能
+// ══════════════════════════════════════════
+
+async function loadSharedBooks(){
+  if(!isCloud()) return;
+  const sbList = await DB.fetchSharedBooks();
+  sharedBooks = {};
+  sbList.forEach(sb => { sharedBooks[sb.id] = sb; });
+
+  // 把雲端共同帳本合併到 localStorage 的帳本列表（顯示用）
+  const localBooks = DB.getBooks().filter(b => b.type !== 'shared' || !sharedBooks[b.id]);
+  const cloudShared = sbList.map(sb => ({
+    id: sb.id, name: sb.name, type: 'shared',
+    members: Object.values(sb.member_names||{}),
+    cats: sb.cats || dc(DEF_CATS),
+    budgets: sb.budgets || {total:0,cats:{}},
+    _cloud: true,
+  }));
+  DB.saveBooks([...localBooks, ...cloudShared]);
+}
+
+async function fetchSharedTxsForBook(bookId){
+  if(!isCloud()||!sharedBooks[bookId]) return;
+  const txs = await DB.fetchSharedTxs(bookId);
+  sharedTxCache[bookId] = txs;
+}
+
+function getBookTxsWithShared(){
+  const book = getBook();
+  if(book.type==='shared' && sharedTxCache[curBook]){
+    return sharedTxCache[curBook];
+  }
+  return DB.getTxs().filter(t=>t.bookId===curBook);
+}
+
+// 建立共同帳本（雲端）
+async function addSharedBookCloud(name){
+  const bookId = 'sb_' + Math.random().toString(36).slice(2,8).toUpperCase();
+  const newBook = {
+    id: bookId, name, type:'shared', members:[],
+    cats: dc(DEF_CATS), budgets:{total:0,cats:{}}, _cloud:true
+  };
+  if(isCloud()){
+    const result = await DB.createSharedBook(newBook);
+    if(!result){ toast('建立失敗，請稍後再試'); return null; }
+    sharedBooks[bookId] = result;
+  }
+  const books = DB.getBooks();
+  books.push(newBook);
+  DB.saveBooks(books);
+  return bookId;
+}
+
+// 用邀請碼加入共同帳本
+async function joinByInviteCode(code){
+  const result = await DB.joinSharedBook(code.trim().toUpperCase());
+  if(result?.error){ toast(result.error); return; }
+  toast(`✓ 已加入「${result.book_name}」`);
+  await loadSharedBooks();
+  renderBookTabs();
+  closeMo('mo-join-shared');
+}
+
+// 複製邀請碼
+function copyInviteCode(bookId){
+  navigator.clipboard.writeText(bookId).then(()=>toast('邀請碼已複製：' + bookId));
 }
 
 // ── 版本遷移：把舊帳本分類補上 subs ──
@@ -848,7 +986,11 @@ function getCats(type){
   });
   return cats;
 }
-function getBookTxs(){ return DB.getTxs().filter(t=>t.bookId===curBook); }
+function getBookTxs(){
+  const book=getBook();
+  if(book?.type==='shared'&&sharedTxCache[curBook]) return sharedTxCache[curBook];
+  return DB.getTxs().filter(t=>t.bookId===curBook);
+}
 
 function renderBookTabs(){
   const books=DB.getBooks();
@@ -857,37 +999,64 @@ function renderBookTabs(){
     `<button style="flex-shrink:0;width:25px;height:25px;border-radius:50%;border:1.5px dashed var(--border);color:var(--text3);font-size:1rem;display:flex;align-items:center;justify-content:center;margin:auto 0;" onclick="openMo('mo-add-book')">＋</button>`;
 }
 
-function switchBook(id,re=true){
+async function switchBook(id,re=true){
   curBook=id; localStorage.setItem('lastBook',id);
   const b=getBook();
-  document.getElementById('book-title').textContent=b.name;
-  document.getElementById('sum-card').className='summary-card '+(b.type==='shared'?'shared':'personal');
+  isSharedBook = b?.type==='shared';
+  document.getElementById('book-title').textContent=b?.name||'帳本';
+  document.getElementById('sum-card').className='summary-card '+(isSharedBook?'shared':'personal');
   fillMainCats(); fillGoalChips();
+  // 切換到共同帳本時從雲端拉取記錄
+  if(isSharedBook&&isCloud()&&!sharedTxCache[id]){
+    await fetchSharedTxsForBook(id);
+  }
   if(re){renderBookTabs();renderHome();if(document.getElementById('page-stats').classList.contains('active'))renderStats();if(document.getElementById('page-budget').classList.contains('active'))renderBudget();updateCatCounts();}
 }
 
-function addBook(){
+async function addBook(){
   const name=document.getElementById('new-book-name').value.trim();
   if(!name){toast('請輸入帳本名稱');return;}
   const type=document.getElementById('new-book-type').value;
-  const members=[];
-  if(type==='shared'){for(let i=0;i<4;i++){const v=(document.getElementById('m'+i)||{}).value?.trim();if(v)members.push(v);}if(members.length<2){toast('請至少填 2 位成員');return;}}
-  const books=DB.getBooks();
-  const nb={id:'b'+Date.now(),name,type,members,cats:dc(DEF_CATS),budgets:{total:0,cats:{}}};
-  books.push(nb); DB.saveBooks(books);
   closeMo('mo-add-book'); document.getElementById('new-book-name').value='';
-  switchBook(nb.id); toast(`「${name}」已建立`);
+  document.getElementById('new-book-type').value='personal';
+  document.getElementById('shared-sec').style.display='none';
+
+  if(type==='shared'){
+    if(!isCloud()){toast('請先登入才能建立共同帳本');return;}
+    const bookId=await addSharedBookCloud(name);
+    if(!bookId) return;
+    renderBookTabs(); switchBook(bookId);
+    toast(`「${name}」已建立！邀請碼：${bookId}`);
+    setTimeout(()=>{ openMo('mo-book-mgr'); },400);
+  } else {
+    const books=DB.getBooks();
+    const nb={id:'b'+Date.now(),name,type:'personal',members:[],cats:dc(DEF_CATS),budgets:{total:0,cats:{}}};
+    books.push(nb); DB.saveBooks(books);
+    renderBookTabs(); switchBook(nb.id); toast(`「${name}」已建立`);
+  }
 }
 
 function renderBookListMd(){
   const books=DB.getBooks();
-  document.getElementById('book-list-md').innerHTML=books.map(b=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:.65rem 0;border-bottom:1px solid var(--border);">
-      <div>${b.type==='shared'?'👥':'📒'}</div>
-      <div style="flex:1;"><div style="font-size:.88rem;font-weight:500;">${esc(b.name)}</div>
-        <div style="font-size:.72rem;color:var(--text3);">${b.type==='shared'?'共同・'+b.members.join('、'):'個人帳本'}</div></div>
-      ${books.length>1?`<button onclick="deleteBook('${b.id}')" style="font-size:.79rem;color:var(--text3);opacity:.6;padding:4px 8px;">刪除</button>`:''}
-    </div>`).join('');
+  document.getElementById('book-list-md').innerHTML=books.map(b=>{
+    const isS=b.type==='shared';
+    const sb=sharedBooks[b.id];
+    const members=isS&&sb?Object.values(sb.member_names||{}).join('、'):'';
+    const inv=isS&&sb?`<div style="margin-top:5px;display:flex;align-items:center;gap:6px;">
+      <span style="font-size:.7rem;color:var(--text3);">邀請碼：</span>
+      <code style="font-size:.78rem;font-weight:700;color:var(--blue-d);">${b.id}</code>
+      <button onclick="copyInviteCode('${b.id}')" style="font-size:.7rem;color:var(--blue-d);padding:2px 6px;border-radius:5px;border:1px solid var(--blue-l);">複製</button>
+    </div>`:'';
+    return `<div style="padding:.75rem 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div>${isS?'👥':'📒'}</div>
+        <div style="flex:1;"><div style="font-size:.88rem;font-weight:500;">${esc(b.name)}</div>
+          <div style="font-size:.72rem;color:var(--text3);">${isS?'共同'+(members?'・'+members:''):'個人帳本'}</div></div>
+        ${books.length>1?`<button onclick="deleteBook('${b.id}')" style="font-size:.79rem;color:var(--text3);opacity:.6;padding:4px 8px;">刪除</button>`:''}
+      </div>${inv}
+    </div>`;
+  }).join('')+
+  `<button onclick="closeMo('mo-book-mgr');openMo('mo-join-shared')" style="width:100%;padding:10px;border-radius:11px;border:1.5px dashed var(--border);color:var(--text2);font-size:.84rem;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px;">🔑 用邀請碼加入共同帳本</button>`;
 }
 
 function deleteBook(id){
@@ -1044,7 +1213,14 @@ function confirmWho(who){ closeMo('mo-who'); if(pendingTx){saveTx({...pendingTx,
 
 async function saveTx(d){
   const tx={id:Date.now()+'',bookId:curBook,type:d.type,amount:d.amount,catId:d.catId,subCat:d.subCat||'',note:d.note||'',date:d.date,who:d.who||'',goalId:d.goalId||''};
-  await DB.insertTx(tx);
+  const book=getBook();
+  if(book?.type==='shared'&&isCloud()){
+    await DB.insertSharedTx(tx, curBook);
+    if(!sharedTxCache[curBook]) sharedTxCache[curBook]=[];
+    sharedTxCache[curBook].unshift({...tx, who_name:d.who||''});
+  } else {
+    await DB.insertTx(tx);
+  }
 
   // 收入 + 選了存錢罐 → 自動撥款進罐（不用手動）
   if(d.type==='income' && d.goalId){
@@ -1067,7 +1243,13 @@ async function saveTx(d){
 
 async function deleteTx(id){
   if(!confirm('確定刪除？'))return;
-  await DB.deleteTx(id);
+  const book=getBook();
+  if(book?.type==='shared'&&isCloud()){
+    await DB.deleteSharedTx(id);
+    if(sharedTxCache[curBook]) sharedTxCache[curBook]=sharedTxCache[curBook].filter(t=>t.id!==id);
+  } else {
+    await DB.deleteTx(id);
+  }
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
   toast('已刪除');
@@ -1694,7 +1876,7 @@ function clearAll(){ localStorage.clear(); closeMo('mo-clear'); init(); toast('�
 // 使用 Google Identity Services（GIS）+ Drive API v3
 // 每天備份一次，存在使用者自己的 Google Drive AppData 資料夾
 // ══════════════════════════════════════════
-const GD_CLIENT_ID = '336212546733-gd4pnho93vrkncl8d98arhdjb0tclm7g.apps.googleusercontent.com'; // 填入你的 Google OAuth Client ID（與 Supabase 同一個）
+const GD_CLIENT_ID = ''; // 填入你的 Google OAuth Client ID（與 Supabase 同一個）
 const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 let _gdToken = null;
 
