@@ -620,7 +620,7 @@ select,input{font-family:inherit;}
   <div class="md-title">加入共同帳本 <button class="md-close" onclick="closeMo('mo-join-shared')">✕</button></div>
   <p style="font-size:.82rem;color:var(--text2);line-height:1.6;margin-bottom:.8rem;">請對方把帳本邀請碼傳給你，輸入後即可加入。</p>
   <label class="ml">邀請碼</label>
-  <input class="mi" type="text" id="join-code-inp" placeholder="例：SB_ABC123" style="text-transform:uppercase;letter-spacing:.1em;font-weight:600;">
+  <input class="mi" type="text" id="join-code-inp" placeholder="貼上邀請碼" style="letter-spacing:.05em;font-weight:600;">
   <button class="mb primary" onclick="joinByInviteCode(document.getElementById('join-code-inp').value)">加入帳本</button>
 </div></div>
 
@@ -934,7 +934,7 @@ function getBookTxsWithShared(){
 
 // 建立共同帳本（雲端）
 async function addSharedBookCloud(name){
-  const bookId = 'sb_' + Math.random().toString(36).slice(2,8).toUpperCase();
+  const bookId = 'sb_' + Math.random().toString(36).slice(2,8);
   const newBook = {
     id: bookId, name, type:'shared', members:[],
     cats: dc(DEF_CATS), budgets:{total:0,cats:{}}, _cloud:true
@@ -952,9 +952,11 @@ async function addSharedBookCloud(name){
 
 // 用邀請碼加入共同帳本
 async function joinByInviteCode(code){
-  const result = await DB.joinSharedBook(code.trim().toUpperCase());
+  const trimmed = code.trim();
+  if(!trimmed){ toast('請輸入邀請碼'); return; }
+  const result = await DB.joinSharedBook(trimmed);
   if(result?.error){ toast(result.error); return; }
-  toast(`✓ 已加入「${result.book_name}」`);
+  toast('✓ 已加入「'+result.book_name+'」');
   await loadSharedBooks();
   renderBookTabs();
   closeMo('mo-join-shared');
@@ -962,7 +964,12 @@ async function joinByInviteCode(code){
 
 // 複製邀請碼
 function copyInviteCode(bookId){
-  navigator.clipboard.writeText(bookId).then(()=>toast('邀請碼已複製：' + bookId));
+  navigator.clipboard.writeText(bookId)
+    .then(()=>toast('邀請碼已複製 ✓'))
+    .catch(()=>{
+      // 複製失敗時顯示邀請碼讓使用者手動複製
+      prompt('請手動複製此邀請碼：', bookId);
+    });
 }
 
 // ── 版本遷移：把舊帳本分類補上 subs ──
