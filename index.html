@@ -698,7 +698,11 @@ async function signInGoogle(){
   if(!_sb){ toast('尚未設定 Supabase'); return; }
   await _sb.auth.signInWithOAuth({
     provider:'google',
-    options:{ redirectTo: location.href }
+    options:{
+      redirectTo: location.href,
+      scopes: 'https://www.googleapis.com/auth/drive.file',
+      queryParams:{ access_type:'offline', prompt:'consent' }
+    }
   });
 }
 async function signOut(){
@@ -724,9 +728,11 @@ const DB={
   // 雲端 tx 操作
   async insertTx(tx){
     if(!isCloud()){ const t=DB.getTxs(); t.unshift(tx); DB.saveTxs(t); return; }
-    const {error}=await _sb.from('transactions').insert({...tx,user_id:_user.id});
+    const row={id:tx.id,user_id:_user.id,book_id:tx.bookId||'personal',type:tx.type,
+      amount:tx.amount,cat_id:tx.catId||'other',sub_cat:tx.subCat||'',
+      note:tx.note||'',date:tx.date,who:tx.who||'',goal_id:tx.goalId||''};
+    const {error}=await _sb.from('transactions').insert(row);
     if(error) console.error('insert tx',error);
-    // 同步到 localStorage cache
     const t=DB.getTxs(); t.unshift(tx); DB.saveTxs(t);
   },
   async deleteTx(id){
@@ -738,7 +744,14 @@ const DB={
     if(!isCloud()) return;
     const {data,error}=await _sb.from('transactions')
       .select('*').eq('user_id',_user.id).order('date',{ascending:false});
-    if(!error&&data) DB.saveTxs(data);
+    if(!error&&data){
+      const txs=data.map(r=>({
+        id:r.id, bookId:r.book_id||'personal', type:r.type, amount:r.amount,
+        catId:r.cat_id||'other', subCat:r.sub_cat||'', note:r.note||'',
+        date:r.date, who:r.who||'', goalId:r.goal_id||'',
+      }));
+      DB.saveTxs(txs);
+    }
   },
 
   // ── 共同帳本雲端操作 ──
@@ -1886,7 +1899,7 @@ function clearAll(){ localStorage.clear(); closeMo('mo-clear'); init(); toast('�
 // 使用 Google Identity Services（GIS）+ Drive API v3
 // 每天備份一次，存在使用者自己的 Google Drive AppData 資料夾
 // ══════════════════════════════════════════
-const GD_CLIENT_ID = '336212546733-gd4pnho93vrkncl8d98arhdjb0tclm7g.apps.googleusercontent.com'; // 填入你的 Google OAuth Client ID（與 Supabase 同一個）
+const GD_CLIENT_ID = '336212546733-gd4pnho93vrkncl8d98arhdjb0tclm7g.apps.googleusercontent.com';
 const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 let _gdToken = null;
 
@@ -1918,11 +1931,19 @@ async function manualBackup(){
 }
 
 async function doGDriveBackup(silent){
-  // 取得 Google Access Token（用 Supabase session 裡的 provider_token）
+  // 取得 Google Access Token
   const {data:{session}} = await _sb.auth.getSession();
   const token = session?.provider_token;
   if(!token){
-    if(!silent) toast('請重新登入以啟用備份');
+    if(!silent){
+      toast('請重新登入以啟用 Google Drive 備份');
+      // 重新登入並要求 Drive 權限
+      setTimeout(()=>{
+        if(confirm('需要重新登入才能啟用 Google Drive 備份，現在登入嗎？')){
+          signInGoogle();
+        }
+      }, 500);
+    }
     return;
   }
 
