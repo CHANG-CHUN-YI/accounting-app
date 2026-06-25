@@ -672,8 +672,8 @@ const CAT_COLORS=['#a89bbf','#8fa8b8','#c4a09a','#8fb5a0','#d4b896','#b8a8bf','#
 // ══════════════════════════════════════════
 // Supabase 設定（部署時填入，本機留空會自動用 localStorage）
 // ══════════════════════════════════════════
-const SB_URL  = ''; // 填入你的 Supabase Project URL
-const SB_KEY  = ''; // 填入你的 anon public key
+const SB_URL  = 'https://xjgxlgriodjpicnsiyip.supabase.co';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqZ3hsZ3Jpb2RqcGljbnNpeWlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTA5NDYsImV4cCI6MjA5Nzk2Njk0Nn0.ISh-lHn4Dinuf5656H9XuCmDrHjHe5YgRKRZzCyL3DY';
 
 let _sb = null, _user = null;
 
@@ -1876,7 +1876,7 @@ function clearAll(){ localStorage.clear(); closeMo('mo-clear'); init(); toast('�
 // 使用 Google Identity Services（GIS）+ Drive API v3
 // 每天備份一次，存在使用者自己的 Google Drive AppData 資料夾
 // ══════════════════════════════════════════
-const GD_CLIENT_ID = ''; // 填入你的 Google OAuth Client ID（與 Supabase 同一個）
+const GD_CLIENT_ID = '336212546733-gd4pnho93vrkncl8d98arhdjb0tclm7g.apps.googleusercontent.com'; // 填入你的 Google OAuth Client ID（與 Supabase 同一個）
 const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 let _gdToken = null;
 
