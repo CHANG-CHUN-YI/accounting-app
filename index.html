@@ -690,7 +690,10 @@ async function signInGoogle(){
   if(!_sb){ toast('尚未設定 Supabase'); return; }
   await _sb.auth.signInWithOAuth({
     provider:'google',
-    options:{ redirectTo: location.href }
+    options:{
+      redirectTo: location.href,
+      scopes: 'https://www.googleapis.com/auth/drive.file'
+    }
   });
 }
 async function signOut(){
