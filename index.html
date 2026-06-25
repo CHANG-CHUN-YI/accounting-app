@@ -1059,11 +1059,21 @@ function renderBookListMd(){
   `<button onclick="closeMo('mo-book-mgr');openMo('mo-join-shared')" style="width:100%;padding:10px;border-radius:11px;border:1.5px dashed var(--border);color:var(--text2);font-size:.84rem;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px;">🔑 用邀請碼加入共同帳本</button>`;
 }
 
-function deleteBook(id){
+async function deleteBook(id){
   if(!confirm('確定刪除此帳本及所有記錄？'))return;
   let books=DB.getBooks().filter(b=>b.id!==id);
   if(!books.length){toast('至少保留一個帳本');return;}
-  DB.saveBooks(books); DB.saveTxs(DB.getTxs().filter(t=>t.bookId!==id));
+
+  // 共同帳本：同步刪除 Supabase
+  const book=DB.getBooks().find(b=>b.id===id);
+  if(book?.type==='shared'&&isCloud()){
+    await DB.deleteSharedBook(id);
+    delete sharedBooks[id];
+    delete sharedTxCache[id];
+  }
+
+  DB.saveBooks(books);
+  DB.saveTxs(DB.getTxs().filter(t=>t.bookId!==id));
   if(curBook===id) curBook=books[0].id;
   closeMo('mo-book-mgr'); switchBook(curBook); toast('帳本已刪除');
 }
