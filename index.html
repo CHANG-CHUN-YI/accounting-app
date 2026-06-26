@@ -932,7 +932,14 @@ async function showApp(){
   document.getElementById('stats-month').value=new Date().getMonth()+1;
 
   const now=new Date(); calY=now.getFullYear(); calM=now.getMonth(); calSel=today();
-  renderBookTabs(); switchBook(curBook,false); applyRecurs(); renderHome();
+  renderBookTabs();
+  // 如果上次停在共同帳本，主動載入資料再渲染
+  const lastBook=DB.getBooks().find(b=>b.id===curBook);
+  if(lastBook?.type==='shared'&&isCloud()){
+    isSharedBook=true;
+    await fetchSharedTxsForBook(curBook);
+  }
+  switchBook(curBook,false); applyRecurs(); renderHome();
 
   // 自動備份排程（每天一次）
   scheduleAutoBackup();
