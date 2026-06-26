@@ -872,8 +872,8 @@ const DB={
 
   async updateTx(id, updates){
     if(!isCloud()) return;
-    // 轉換欄位名
     const row={};
+    if(updates.type!==undefined) row.type=updates.type;
     if(updates.amount!==undefined) row.amount=updates.amount;
     if(updates.catId!==undefined) row.cat_id=updates.catId;
     if(updates.subCat!==undefined) row.sub_cat=updates.subCat;
@@ -881,12 +881,14 @@ const DB={
     if(updates.date!==undefined) row.date=updates.date;
     if(updates.who!==undefined) row.who=updates.who;
     if(updates.goalId!==undefined) row.goal_id=updates.goalId;
-    await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id);
+    const {error}=await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id);
+    if(error) console.error('updateTx',error);
   },
 
   async updateSharedTx(id, updates){
     if(!isCloud()) return;
     const row={};
+    if(updates.type!==undefined) row.type=updates.type;
     if(updates.amount!==undefined) row.amount=updates.amount;
     if(updates.catId!==undefined) row.cat_id=updates.catId;
     if(updates.subCat!==undefined) row.sub_cat=updates.subCat;
@@ -894,7 +896,8 @@ const DB={
     if(updates.date!==undefined) row.date=updates.date;
     if(updates.who!==undefined) row.who_name=updates.who;
     if(updates.goalId!==undefined) row.goal_id=updates.goalId;
-    await _sb.from('shared_transactions').update(row).eq('id',id);
+    const {error}=await _sb.from('shared_transactions').update(row).eq('id',id);
+    if(error) console.error('updateSharedTx',error);
   },
 
   // ══════════════════════════════
@@ -1683,6 +1686,13 @@ async function saveTxEdit(){
     await DB.updateTx(id,updates);
   }
   closeMo('mo-edit-tx');
+  // 重新從 Supabase 拉最新資料確保一致
+  const bookT=getBook();
+  if(bookT?.type==='shared'&&isCloud()){
+    await fetchSharedTxsForBook(curBook);
+  } else if(isCloud()){
+    await DB.fetchTxs();
+  }
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
   toast('記錄已更新 ✓');
@@ -1729,6 +1739,13 @@ async function deleteTx(id){
     }
   }
 
+  // 重新從 Supabase 拉最新資料
+  const delBook=getBook();
+  if(delBook?.type==='shared'&&isCloud()){
+    await fetchSharedTxsForBook(curBook);
+  } else if(isCloud()){
+    await DB.fetchTxs();
+  }
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
   if(document.getElementById('page-wealth').classList.contains('active'))renderWealth();
