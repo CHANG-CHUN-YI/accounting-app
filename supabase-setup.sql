@@ -243,3 +243,55 @@ create index if not exists idx_assets_user on assets(user_id);
 create index if not exists idx_goal_allocs_goal on goal_allocs(goal_id);
 create index if not exists idx_goal_spends_goal on goal_spends(goal_id);
 create index if not exists idx_asset_txs_asset on asset_txs(asset_id);
+
+-- ════════════════════════════════════════
+-- v4：更新 goals / assets RLS，讓共同帳本成員互相看到
+-- 在 Supabase SQL Editor 貼上執行
+-- ════════════════════════════════════════
+
+-- 刪除舊的 goals RLS
+drop policy if exists "own goals" on goals;
+
+-- 新的 goals RLS：自己的 OR 是共同帳本成員
+create policy "goals access" on goals
+  for all using (
+    auth.uid() = user_id
+    or
+    book_id in (
+      select id from shared_books
+      where created_by = auth.uid()
+      or auth.uid() = any(members)
+    )
+  );
+
+-- 刪除舊的 assets RLS
+drop policy if exists "own assets" on assets;
+
+-- 新的 assets RLS：自己的 OR 是共同帳本成員
+create policy "assets access" on assets
+  for all using (
+    auth.uid() = user_id
+    or
+    book_id in (
+      select id from shared_books
+      where created_by = auth.uid()
+      or auth.uid() = any(members)
+    )
+  );
+
+-- asset_txs 也要更新
+drop policy if exists "own asset txs" on asset_txs;
+
+create policy "asset txs access" on asset_txs
+  for all using (
+    auth.uid() = user_id
+    or
+    asset_id in (
+      select a.id from assets a
+      where a.book_id in (
+        select id from shared_books
+        where created_by = auth.uid()
+        or auth.uid() = any(members)
+      )
+    )
+  );
