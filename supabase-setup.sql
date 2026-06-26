@@ -156,3 +156,90 @@ alter table user_settings enable row level security;
 
 create policy "own settings" on user_settings
   for all using (auth.uid() = user_id);
+
+-- ════════════════════════════════════════
+-- 記帳本 Supabase v3：存錢罐 + 資金帳戶
+-- 在 Supabase SQL Editor 貼上執行
+-- ════════════════════════════════════════
+
+-- 1. 存錢罐主表
+create table if not exists goals (
+  id          text primary key,
+  user_id     uuid references auth.users(id) on delete cascade not null,
+  book_id     text not null default 'b1',
+  emoji       text default '🎯',
+  name        text not null,
+  target      numeric default 0,
+  note        text default '',
+  created_at  date default current_date
+);
+
+alter table goals enable row level security;
+create policy "own goals" on goals
+  for all using (auth.uid() = user_id);
+
+-- 2. 存錢罐撥款記錄
+create table if not exists goal_allocs (
+  id          text primary key,
+  goal_id     text references goals(id) on delete cascade not null,
+  user_id     uuid references auth.users(id) on delete cascade not null,
+  amount      numeric not null,
+  note        text default '',
+  date        date not null
+);
+
+alter table goal_allocs enable row level security;
+create policy "own goal allocs" on goal_allocs
+  for all using (auth.uid() = user_id);
+
+-- 3. 存錢罐花費記錄
+create table if not exists goal_spends (
+  id          text primary key,
+  goal_id     text references goals(id) on delete cascade not null,
+  user_id     uuid references auth.users(id) on delete cascade not null,
+  amount      numeric not null,
+  note        text default '',
+  date        date not null
+);
+
+alter table goal_spends enable row level security;
+create policy "own goal spends" on goal_spends
+  for all using (auth.uid() = user_id);
+
+-- 4. 資金帳戶主表
+create table if not exists assets (
+  id          text primary key,
+  user_id     uuid references auth.users(id) on delete cascade not null,
+  book_id     text not null default 'b1',
+  emoji       text default '🏦',
+  name        text not null,
+  init_amount numeric default 0,
+  note        text default '',
+  created_at  date default current_date
+);
+
+alter table assets enable row level security;
+create policy "own assets" on assets
+  for all using (auth.uid() = user_id);
+
+-- 5. 資金帳戶交易記錄
+create table if not exists asset_txs (
+  id          text primary key,
+  asset_id    text references assets(id) on delete cascade not null,
+  user_id     uuid references auth.users(id) on delete cascade not null,
+  type        text not null check (type in ('in','out')),
+  amount      numeric not null,
+  note        text default '',
+  date        date not null
+);
+
+alter table asset_txs enable row level security;
+create policy "own asset txs" on asset_txs
+  for all using (auth.uid() = user_id);
+
+-- 索引
+create index if not exists idx_goals_user on goals(user_id);
+create index if not exists idx_assets_user on assets(user_id);
+create index if not exists idx_goal_allocs_goal on goal_allocs(goal_id);
+create index if not exists idx_goal_spends_goal on goal_spends(goal_id);
+create index if not exists idx_asset_txs_asset on asset_txs(asset_id);
