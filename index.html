@@ -615,8 +615,12 @@ select,input{font-family:inherit;}
   </div>
   <label class="ml">金額（NT$）</label>
   <input class="mi" type="number" id="asset-tx-amt" placeholder="0" inputmode="decimal">
-  <label class="ml">備註</label><input class="mi" type="text" id="asset-tx-note" placeholder="選填">
-  <button class="mb teal" onclick="doAssetTx()">確認</button>
+  <label class="ml">備註</label>
+  <input class="mi" type="text" id="asset-tx-note" placeholder="選填">
+  <label class="ml">日期</label>
+  <input class="mi" type="date" id="asset-tx-date">
+  <input type="hidden" id="asset-tx-edit-id">
+  <button class="mb teal" id="asset-tx-submit-btn" onclick="submitAssetTx()">確認</button>
   <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:.8rem;">
     <div style="font-size:.79rem;font-weight:600;color:var(--text2);margin-bottom:6px;">交易記錄</div>
     <div id="asset-hist-list"></div>
@@ -782,9 +786,14 @@ const DB={
     const t=DB.getTxs(); t.unshift(tx); DB.saveTxs(t);
   },
   async deleteTx(id){
+    if(!isCloud()){
+      const t=DB.getTxs().filter(x=>x.id!==id); DB.saveTxs(t); return;
+    }
+    // 先等 Supabase 刪除完成
+    const {error}=await _sb.from('transactions').delete().eq('id',id).eq('user_id',_user.id);
+    if(error){ console.error('deleteTx error',error); return; }
+    // 再更新 localStorage
     const t=DB.getTxs().filter(x=>x.id!==id); DB.saveTxs(t);
-    if(!isCloud()) return;
-    await _sb.from('transactions').delete().eq('id',id).eq('user_id',_user.id);
   },
   async fetchTxs(){
     if(!isCloud()) return;
@@ -1739,13 +1748,7 @@ async function deleteTx(id){
     }
   }
 
-  // 重新從 Supabase 拉最新資料
-  const delBook=getBook();
-  if(delBook?.type==='shared'&&isCloud()){
-    await fetchSharedTxsForBook(curBook);
-  } else if(isCloud()){
-    await DB.fetchTxs();
-  }
+  // 更新畫面（不重拉 Supabase，避免時序問題）
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
   if(document.getElementById('page-wealth').classList.contains('active'))renderWealth();
@@ -2354,15 +2357,26 @@ function openAssetTx(id,type){
   const a=DB.getAssets().find(a=>a.id===id);
   document.getElementById('asset-tx-title').innerHTML=`${a.e} ${esc(a.name)} <button class="md-close" onclick="closeMo('mo-asset-tx')">✕</button>`;
   setAssetTxType(type);
-  document.getElementById('asset-tx-amt').value=''; document.getElementById('asset-tx-note').value='';
-  const hist=(a.txs||[]).slice().reverse().slice(0,15);
+  // 重設為新增模式
+  document.getElementById('asset-tx-amt').value='';
+  document.getElementById('asset-tx-note').value='';
+  document.getElementById('asset-tx-date').value=today();
+  document.getElementById('asset-tx-edit-id').value='';
+  document.getElementById('asset-tx-submit-btn').textContent='確認';
+  renderAssetHist(a);
+  openMo('mo-asset-tx');
+}
+
+function renderAssetHist(a){
+  const hist=(a.txs||[]).slice().sort((x,y)=>y.date.localeCompare(x.date)).slice(0,20);
   document.getElementById('asset-hist-list').innerHTML=hist.map(t=>`
     <div class="dep-item">
-      <span style="color:var(--text3);min-width:60px;">${t.date}</span>
-      <span style="flex:1;padding:0 8px;">${t.note||''}</span>
-      <span style="font-weight:600;color:${t.type==='in'?'var(--green-d)':'#b07a74'}">${t.type==='in'?'+':'-'}NT$${fmt(t.amount)}</span>
+      <span style="color:var(--text3);min-width:60px;font-size:.8rem;">${t.date}</span>
+      <span style="flex:1;padding:0 6px;font-size:.83rem;">${esc(t.note||'')}</span>
+      <span style="font-weight:600;color:${t.type==='in'?'var(--green-d)':'#b07a74'};margin-right:6px;">${t.type==='in'?'+':'−'}NT$${fmt(t.amount)}</span>
+      <button onclick="openEditAssetTx('${assetTxId}','${t.id}')" style="font-size:.7rem;color:var(--blue-d);padding:2px 5px;border-radius:5px;border:1px solid var(--blue-l);margin-right:3px;">編</button>
+      <button onclick="deleteAssetTx('${assetTxId}','${t.id}')" style="font-size:.7rem;color:var(--text3);padding:2px 5px;border-radius:5px;border:1px solid var(--border);">✕</button>
     </div>`).join('')||'<div style="font-size:.8rem;color:var(--text3);">尚無記錄</div>';
-  openMo('mo-asset-tx');
 }
 
 function setAssetTxType(type){
@@ -2371,17 +2385,78 @@ function setAssetTxType(type){
   document.getElementById('asset-tx-out-btn').style.fontWeight=type==='out'?'700':'400';
 }
 
+// 新增或編輯資金帳戶交易
+async function submitAssetTx(){
+  const editId=document.getElementById('asset-tx-edit-id').value;
+  if(editId) await saveEditAssetTx(editId);
+  else await doAssetTx();
+}
+
 async function doAssetTx(){
   const amt=parseFloat(document.getElementById('asset-tx-amt').value);
   if(!amt||amt<=0){toast('請輸入金額');return;}
+  const date=document.getElementById('asset-tx-date').value||today();
+  const note=document.getElementById('asset-tx-note').value.trim();
   const assets=DB.getAssets(),a=assets.find(a=>a.id===assetTxId);
   if(!a.txs)a.txs=[];
-  const atx={id:'at_'+Date.now(),type:assetTxType,amount:amt,note:document.getElementById('asset-tx-note').value.trim(),date:today()};
+  const atx={id:'at_'+Date.now(),type:assetTxType,amount:amt,note,date};
   a.txs.push(atx);
   DB.saveAssets(assets);
   await DB.upsertAssetTx(assetTxId, atx);
-  closeMo('mo-asset-tx'); renderAssets(); updateTotalAssets();
+  document.getElementById('asset-tx-amt').value='';
+  document.getElementById('asset-tx-note').value='';
+  document.getElementById('asset-tx-date').value=today();
+  renderAssetHist(a); renderAssets(); updateTotalAssets();
   toast(`${assetTxType==='in'?'存入':'提領'} NT$${fmt(amt)}`);
+}
+
+function openEditAssetTx(assetId, txId){
+  const a=DB.getAssets().find(a=>a.id===assetId);
+  if(!a) return;
+  const t=(a.txs||[]).find(t=>t.id===txId);
+  if(!t) return;
+  assetTxId=assetId;
+  setAssetTxType(t.type);
+  document.getElementById('asset-tx-amt').value=t.amount;
+  document.getElementById('asset-tx-note').value=t.note||'';
+  document.getElementById('asset-tx-date').value=t.date||today();
+  document.getElementById('asset-tx-edit-id').value=txId;
+  document.getElementById('asset-tx-submit-btn').textContent='儲存修改';
+}
+
+async function saveEditAssetTx(txId){
+  const amt=parseFloat(document.getElementById('asset-tx-amt').value);
+  if(!amt||amt<=0){toast('請輸入正確金額');return;}
+  const date=document.getElementById('asset-tx-date').value||today();
+  const note=document.getElementById('asset-tx-note').value.trim();
+  const assets=DB.getAssets(),a=assets.find(a=>a.id===assetTxId);
+  if(!a) return;
+  const idx=(a.txs||[]).findIndex(t=>t.id===txId);
+  if(idx>=0){
+    a.txs[idx]={...a.txs[idx], type:assetTxType, amount:amt, note, date};
+    DB.saveAssets(assets);
+    await DB.upsertAssetTx(assetTxId, a.txs[idx]);
+  }
+  // 重設為新增模式
+  document.getElementById('asset-tx-amt').value='';
+  document.getElementById('asset-tx-note').value='';
+  document.getElementById('asset-tx-date').value=today();
+  document.getElementById('asset-tx-edit-id').value='';
+  document.getElementById('asset-tx-submit-btn').textContent='確認';
+  renderAssetHist(a); renderAssets(); updateTotalAssets();
+  toast('已更新 ✓');
+}
+
+async function deleteAssetTx(assetId, txId){
+  if(!confirm('確定刪除此交易記錄？')) return;
+  const assets=DB.getAssets(),a=assets.find(a=>a.id===assetId);
+  if(!a) return;
+  a.txs=(a.txs||[]).filter(t=>t.id!==txId);
+  DB.saveAssets(assets);
+  // 從 Supabase 刪除
+  if(isCloud()) await _sb.from('asset_txs').delete().eq('id',txId).eq('user_id',_user.id);
+  renderAssetHist(a); renderAssets(); updateTotalAssets();
+  toast('已刪除');
 }
 
 async function deleteAsset(id){
