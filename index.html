@@ -867,12 +867,8 @@ const DB={
     return goals.map(g=>({
       id:g.id, bookId:g.book_id, e:g.emoji, name:g.name,
       target:g.target||0, note:g.note||'', createdAt:g.created_at,
-      allocs:(allocs||[]).filter(a=>a.goal_id===g.id).map(a=>({
-        id:a.id, amount:a.amount, note:a.note||'', date:a.date
-      })),
-      spends:(spends||[]).filter(s=>s.goal_id===g.id).map(s=>({
-        id:s.id, amount:s.amount, note:s.note||'', date:s.date
-      })),
+      // allocs 和 spends 已棄用，統一從 tx 讀取
+      allocs:[], spends:[],
     }));
   },
 
@@ -1665,12 +1661,9 @@ function renderGoalPieChart(goalId,canvasId){
   const g=DB.getGoals().find(g=>g.id===goalId);
   if(!g)return;
   const txs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===goalId);
-  const allocated=g.allocs.reduce((s,a)=>s+a.amount,0);
-  const txIncome=txs.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
-  const totalIn=allocated+txIncome;
-  const txSpend=txs.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
-  const manualSpend=g.spends.reduce((s,sp)=>s+sp.amount,0);
-  const totalOut=txSpend+manualSpend;
+  // 全部從 tx 算
+  const totalIn=txs.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
+  const totalOut=txs.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
   const remaining=Math.max(totalIn-totalOut,0);
 
   const ctx=document.getElementById(canvasId);
@@ -1967,11 +1960,12 @@ function renderGoals(){
   const el=document.getElementById('goals-list');
   if(!goals.length){el.innerHTML=`<div style="text-align:center;padding:2.5rem 1rem;color:var(--text3);"><div style="font-size:2.3rem;margin-bottom:.5rem;">🎯</div><div style="font-size:.84rem;line-height:1.7;">還沒有目標<br>點右上角新增一個吧</div></div>`;return;}
   el.innerHTML=goals.map(g=>{
-    const allocated=g.allocs.reduce((s,a)=>s+a.amount,0);
-    const spent=g.spends.reduce((s,sp)=>s+sp.amount,0);
-    // 也統計有 goalId 的 tx
-    const txSpent=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id&&t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
-    const totalSpent=spent+txSpent;
+    // 全部從 tx 計算（allocs/spends 已棄用）
+    const goalTxs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id);
+    const allocated=goalTxs.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
+    const spent=0;
+    const txSpent=goalTxs.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
+    const totalSpent=txSpent;
     const remaining=Math.max(allocated-totalSpent,0);
     const pct=g.target?Math.min(Math.round(allocated/g.target*100),100):0;
     return `<div class="goal-card">
