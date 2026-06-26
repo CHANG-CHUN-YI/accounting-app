@@ -854,6 +854,30 @@ const DB={
     if(!isCloud()) return;
     await _sb.from('shared_transactions').delete().eq('id',id);
   },
+
+  // ── 個人設定（預算）雲端儲存 ──
+  async saveUserSettings(settings){
+    if(!isCloud()) return;
+    await _sb.from('user_settings').upsert({
+      user_id: _user.id,
+      settings_json: JSON.stringify(settings),
+      updated_at: new Date().toISOString(),
+    }, {onConflict:'user_id'});
+  },
+
+  async fetchUserSettings(){
+    if(!isCloud()) return null;
+    const {data,error}=await _sb.from('user_settings')
+      .select('settings_json').eq('user_id',_user.id).single();
+    if(error||!data) return null;
+    try{ return JSON.parse(data.settings_json); }catch(e){ return null; }
+  },
+
+  // 共同帳本預算同步
+  async saveSharedBookBudgets(bookId, budgets){
+    if(!isCloud()) return;
+    await _sb.from('shared_books').update({budgets}).eq('id',bookId);
+  },
 }
 
 
@@ -915,6 +939,8 @@ async function showApp(){
     await DB.fetchTxs();
     // 載入雲端共同帳本
     await loadSharedBooks();
+    // 載入個人設定（預算）
+    await loadUserSettings();
   }
 
   // 把舊帳本的分類補上 subs（版本遷移）
@@ -948,6 +974,33 @@ async function showApp(){
 // ══════════════════════════════════════════
 // 共同帳本雲端功能
 // ══════════════════════════════════════════
+
+async function loadUserSettings(){
+  if(!isCloud()) return;
+  const settings = await DB.fetchUserSettings();
+  if(!settings) return;
+  // 把雲端的預算設定套用到個人帳本
+  const books = DB.getBooks();
+  const personalBook = books.find(b=>b.id==='b1'||b.type==='personal');
+  if(personalBook && settings.budgets){
+    personalBook.budgets = settings.budgets;
+    DB.saveBooks(books);
+  }
+}
+
+async function savePersonalBudget(budgets){
+  // 儲存到 localStorage
+  const books=DB.getBooks(), book=books.find(b=>b.id===curBook);
+  if(book){ book.budgets=budgets; DB.saveBooks(books); }
+  // 同步到雲端
+  if(isCloud()&&getBook()?.type!=='shared'){
+    await DB.saveUserSettings({budgets});
+  } else if(isCloud()&&getBook()?.type==='shared'){
+    await DB.saveSharedBookBudgets(curBook, budgets);
+    // 更新本地 sharedBooks cache
+    if(sharedBooks[curBook]) sharedBooks[curBook].budgets=budgets;
+  }
+}
 
 async function loadSharedBooks(){
   if(!isCloud()) return;
@@ -1636,20 +1689,24 @@ function renderBudget(){
   renderRecurList();
 }
 
-function saveTotalBudget(){
+async function saveTotalBudget(){
   const v=parseFloat(document.getElementById('inp-total-budget').value);
   if(!v||v<=0){toast('請輸入正確金額');return;}
-  const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
-  if(!book.budgets)book.budgets={cats:{}};
-  book.budgets.total=v; DB.saveBooks(books);
+  const book=getBook();
+  if(!book.budgets) book.budgets={cats:{}};
+  book.budgets.total=v;
+  await savePersonalBudget(book.budgets);
   closeMo('mo-total-budget'); renderBudget(); renderHome(); toast('月預算已儲存');
 }
 
-function saveCatBudget(catId){
+async function saveCatBudget(catId){
   const v=parseFloat(document.getElementById('cb-'+catId).value)||0;
-  const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
-  if(!book.budgets)book.budgets={cats:{}};if(!book.budgets.cats)book.budgets.cats={};
-  book.budgets.cats[catId]=v; DB.saveBooks(books); renderBudget(); toast('已儲存');
+  const book=getBook();
+  if(!book.budgets) book.budgets={cats:{}};
+  if(!book.budgets.cats) book.budgets.cats={};
+  book.budgets.cats[catId]=v;
+  await savePersonalBudget(book.budgets);
+  renderBudget(); toast('已儲存');
 }
 
 function fillRecurCats(){ fillCatSel('recur-cat',document.getElementById('recur-type').value); }
