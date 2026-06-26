@@ -1203,6 +1203,7 @@ async function syncBooksToCloud(){
   const personalBooks=DB.getBooks().filter(b=>b.type!=='shared');
   await DB.saveUserSettings({
     books: personalBooks,
+    recurs: DB.getRecurs(),
     lastSync: new Date().toISOString(),
   });
 }
@@ -2137,7 +2138,7 @@ async function addRecur(){
   const day = Math.min(Math.max(dayVal,1),31);
   recurs.push({id:'r'+Date.now(),bookId:curBook,type:document.getElementById('recur-type').value,name,amount:amt,catId:document.getElementById('recur-cat').value,day:String(day)});
   DB.saveRecurs(recurs);
-  if(isCloud()) await DB.saveUserSettings({books:DB.getBooks().filter(b=>b.type!=='shared'),recurs:DB.getRecurs()});
+  await syncBooksToCloud();
   closeMo('mo-add-recur');
   document.getElementById('recur-name').value=''; document.getElementById('recur-amt').value='';
   renderBudget(); toast('已新增');
@@ -2145,7 +2146,7 @@ async function addRecur(){
 
 async function deleteRecur(id){
   DB.saveRecurs(DB.getRecurs().filter(r=>r.id!==id));
-  if(isCloud()) await DB.saveUserSettings({books:DB.getBooks().filter(b=>b.type!=='shared'),recurs:DB.getRecurs()});
+  await syncBooksToCloud();
   renderBudget(); toast('已刪除');
 }
 
