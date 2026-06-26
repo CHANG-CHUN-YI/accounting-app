@@ -1301,12 +1301,23 @@ async function saveTx(d){
     await DB.insertTx(tx);
   }
 
-  // 收入 + 選了存錢罐 → 自動撥款進罐（不用手動）
-  if(d.type==='income' && d.goalId){
+  // 收入 + 選了存錢罐 → 自動撥款進罐
+  if(d.type==='income' && d.goalId && !d._silent){
     const goals=DB.getGoals();
     const g=goals.find(g=>g.id===d.goalId);
     if(g){
-      g.allocs.push({id:'a'+Date.now(),amount:d.amount,note:`自動撥款・${d.note||''}`.replace(/・$/,''),date:d.date||today()});
+      g.allocs.push({id:'a'+Date.now(),amount:d.amount,
+        note:('自動撥款'+(d.note?'・'+d.note:'')),date:d.date||today()});
+      DB.saveGoals(goals);
+    }
+  }
+  // 支出 + 選了存錢罐 → 自動記入花費
+  if(d.type==='expense' && d.goalId && !d._silent){
+    const goals=DB.getGoals();
+    const g=goals.find(g=>g.id===d.goalId);
+    if(g){
+      g.spends.push({id:'sp'+Date.now(),amount:d.amount,
+        note:d.note||'',date:d.date||today()});
       DB.saveGoals(goals);
     }
   }
@@ -1912,16 +1923,14 @@ function exportJSON(){
   a.download=`記帳本_${today()}.json`; a.click(); toast('JSON 已匯出');
 }
 
-function importCSV(input){
+async function importCSV(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     const raw=e.target.result.replace(/^\uFEFF/,'');
     const lines=raw.split(/\r?\n/);
-    // 讀取標頭行，做欄位對應（版本相容）
     const header=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
     const colIdx={
-      id:      header.indexOf('id'),
       type:    header.findIndex(h=>h==='類型'||h==='type'),
       amount:  header.findIndex(h=>h==='金額'||h==='amount'),
       catId:   header.findIndex(h=>h==='分類'||h==='catId'),
@@ -1931,32 +1940,55 @@ function importCSV(input){
       who:     header.findIndex(h=>h==='記帳者'||h==='who'),
       goalId:  header.findIndex(h=>h==='目標'||h==='goalId'),
     };
-    // 如果找不到必要欄位就用位置順序（舊格式回退）
-    const useHeader= colIdx.type>=0 && colIdx.amount>=0 && colIdx.date>=0;
-    let count=0;
+    const useHeader=colIdx.type>=0&&colIdx.amount>=0&&colIdx.date>=0;
+    const rows=[];
     lines.slice(1).forEach(line=>{
       if(!line.trim())return;
-      // 處理帶引號的 CSV 欄位
       const p=parseCSVLine(line);
       const get=(col,pos)=>useHeader?(p[colIdx[col]]||'').trim():(p[pos]||'').trim();
       const typeRaw=get('type',1);
       const amount=parseFloat(get('amount',2));
       const date=get('date',6);
       if(!amount||!date)return;
-      saveTx({
+      rows.push({
         type:typeRaw==='收入'||typeRaw==='income'?'income':'expense',
-        amount,
-        catId:   get('catId',3)  ||'other',
-        subCat:  get('subCat',4) ||'',
-        note:    (get('note',5)||'').replace(/^"|"$/g,''),
-        date,
-        who:     get('who',7)    ||'',
-        goalId:  get('goalId',8) ||'',
-        _silent: true,
+        amount, catId:get('catId',3)||'other', subCat:get('subCat',4)||'',
+        note:(get('note',5)||'').replace(/^"|"$/g,''),
+        date, who:get('who',7)||'', goalId:get('goalId',8)||'',
       });
-      count++;
     });
-    toast(`已匯入 ${count} 筆`);
+    if(!rows.length){toast('沒有有效資料');return;}
+    toast(`匯入中，共 ${rows.length} 筆…`);
+
+    if(isCloud()){
+      // 雲端模式：批次寫入 Supabase
+      const supaRows=rows.map(r=>({
+        id:Date.now()+'_'+Math.random().toString(36).slice(2,6),
+        user_id:_user.id, book_id:curBook,
+        type:r.type, amount:r.amount,
+        cat_id:r.catId, sub_cat:r.subCat,
+        note:r.note, date:r.date,
+        who:r.who, goal_id:r.goalId,
+      }));
+      // 每次最多 50 筆批次插入
+      for(let i=0;i<supaRows.length;i+=50){
+        const batch=supaRows.slice(i,i+50);
+        const {error}=await _sb.from('transactions').insert(batch);
+        if(error) console.error('import batch error',error);
+      }
+      // 重新從雲端拉資料
+      await DB.fetchTxs();
+    } else {
+      // 本機模式
+      const txs=DB.getTxs();
+      rows.forEach(r=>{
+        txs.unshift({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),
+          bookId:curBook,...r});
+      });
+      DB.saveTxs(txs);
+    }
+    renderHome();
+    toast(`✓ 已匯入 ${rows.length} 筆`);
   };
   reader.readAsText(file,'utf-8'); input.value='';
 }
