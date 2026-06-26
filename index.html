@@ -11,14 +11,16 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{
-  --blue:#8fa8b8;--blue-l:#c5d5de;--blue-d:#5c7f96;
-  --green:#8fb5a0;--green-l:#c5dbd0;--green-d:#5c8f74;
-  --purple:#a89bbf;--purple-l:#d0c9e0;--purple-d:#7a6d9a;
-  --amber:#c9b89a;--amber-l:#e8ddd0;--amber-d:#9a8060;
-  --teal:#8ab4b0;--teal-l:#c5dbd8;--teal-d:#5a8a86;
-  --bg:#f4f2ee;--bg2:#eae8e3;--bg3:#fff;
-  --text:#3d3b38;--text2:#7a7870;--text3:#b0aea9;
-  --border:#dddbd6;--radius:14px;--shadow:0 2px 12px rgba(0,0,0,.06);
+  --blue:#3B82C4;--blue-l:#b8d4f0;--blue-d:#2260a0;
+  --blue-mid:#5a9fd4;
+  --green:#4CAF8A;--green-l:#b8e4d4;--green-d:#2d8a64;
+  --pink:#e07a9a;--pink-l:#f8d0de;--pink-d:#b85070;
+  --amber:#e0a040;--amber-l:#f8e0b0;--amber-d:#b87820;
+  --teal:#3a9ab8;--teal-l:#b0dce8;--teal-d:#2a7890;
+  --purple:#7a7ac8;--purple-l:#c8c8f0;--purple-d:#5050a8;
+  --bg:#f5f7fa;--bg2:#e8ecf2;--bg3:#ffffff;
+  --text:#1a2540;--text2:#4a5878;--text3:#8a96b0;
+  --border:#ccd4e4;--radius:14px;--shadow:0 2px 14px rgba(26,37,64,.07);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:15px;}
@@ -46,8 +48,8 @@ select,input{font-family:inherit;}
 
 /* summary */
 .summary-card{border-radius:var(--radius);padding:1.3rem;color:#fff;margin-bottom:.9rem;}
-.summary-card.personal{background:linear-gradient(135deg,var(--blue-d),var(--purple-d));}
-.summary-card.shared{background:linear-gradient(135deg,var(--purple-d),#8a7aaa);}
+.summary-card.personal{background:linear-gradient(135deg,#1a5fa0 0%,#3B82C4 60%,#5a9fd4 100%);}
+.summary-card.shared{background:linear-gradient(135deg,#2d6080 0%,#3a9ab8 100%);}
 .sum-row{display:flex;gap:.9rem;margin-top:.9rem;}
 .sum-item{flex:1;background:rgba(255,255,255,.15);border-radius:10px;padding:.65rem;}
 .sum-label{font-size:.73rem;opacity:.85;}
@@ -124,12 +126,14 @@ select,input{font-family:inherit;}
 .pie-tab.active{background:var(--blue-d);color:#fff;border-color:var(--blue-d);}
 .chart-card{background:var(--bg3);border-radius:var(--radius);padding:1.1rem;box-shadow:var(--shadow);margin-bottom:.9rem;}
 .chart-title{font-size:.84rem;font-weight:600;color:var(--text2);margin-bottom:.7rem;}
-.cat-stat-item{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--border);}
+.cat-stat-item{display:flex;align-items:center;gap:10px;padding:.6rem 0;border-bottom:1px solid var(--border);}
 .cat-stat-item:last-child{border:none;}
-.cat-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
-.cat-stat-name{flex:1;font-size:.84rem;}
-.cat-stat-pct{font-size:.74rem;color:var(--text3);width:30px;text-align:right;}
-.cat-stat-amt{font-size:.86rem;font-weight:600;width:76px;text-align:right;}
+.cat-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+.cat-stat-name{flex:1;font-size:.85rem;font-weight:500;}
+.cat-stat-pct{font-size:.75rem;color:var(--text3);width:30px;text-align:right;}
+.cat-stat-amt{font-size:.87rem;font-weight:600;width:78px;text-align:right;}
+.cat-stat-bar-wrap{height:4px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-top:3px;}
+.cat-stat-bar{height:100%;border-radius:99px;transition:width .4s;}
 
 /* budget */
 .budget-card{background:var(--bg3);border-radius:var(--radius);padding:1.05rem;box-shadow:var(--shadow);margin-bottom:.85rem;}
@@ -154,7 +158,7 @@ select,input{font-family:inherit;}
 .goal-name{font-size:.95rem;font-weight:600;flex:1;}
 .goal-prog-label{display:flex;justify-content:space-between;font-size:.77rem;color:var(--text2);margin-bottom:4px;}
 .goal-bar-wrap{background:var(--bg2);border-radius:99px;height:8px;overflow:hidden;margin-bottom:4px;}
-.goal-bar{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--amber-d),var(--amber));transition:width .5s;}
+.goal-bar{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--green-d),var(--green));transition:width .5s;}
 .goal-stats{display:flex;gap:.7rem;margin-top:.7rem;}
 .goal-stat{flex:1;background:var(--bg2);border-radius:9px;padding:.5rem .65rem;}
 .goal-stat-label{font-size:.67rem;color:var(--text3);}
@@ -174,7 +178,7 @@ select,input{font-family:inherit;}
 .asset-btn{flex:1;padding:8px;border-radius:10px;font-size:.82rem;font-weight:500;text-align:center;border:1.5px solid var(--border);}
 .asset-btn.in{color:var(--green-d);border-color:var(--green-l);background:rgba(143,181,160,.08);}
 .asset-btn.out{color:#b07a74;border-color:rgba(196,160,154,.4);background:rgba(196,160,154,.08);}
-.total-assets-card{background:linear-gradient(135deg,var(--teal-d),var(--blue-d));border-radius:var(--radius);padding:1.3rem;color:#fff;margin-bottom:1rem;}
+.total-assets-card{background:linear-gradient(135deg,#1a5fa0 0%,#2d8a64 100%);border-radius:var(--radius);padding:1.3rem;color:#fff;margin-bottom:1rem;}
 
 /* settings */
 .setting-section{background:var(--bg3);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-bottom:.9rem;}
@@ -188,7 +192,11 @@ select,input{font-family:inherit;}
 .si-a{background:rgba(201,184,154,.2);}
 .s-label{flex:1;font-size:.9rem;}
 .s-val{font-size:.79rem;color:var(--text3);}
-.upgrade-tip{background:rgba(143,168,184,.12);border:1px solid var(--blue-l);border-radius:12px;padding:.85rem 1rem;margin-bottom:.9rem;font-size:.79rem;color:var(--blue-d);line-height:1.7;}
+.upgrade-tip{background:rgba(74,127,165,.1);border:1px solid var(--blue-l);border-radius:12px;padding:.85rem 1rem;margin-bottom:.9rem;font-size:.79rem;color:var(--blue-d);line-height:1.7;}
+.toggle-switch{width:44px;height:26px;background:var(--border);border-radius:99px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;}
+.toggle-switch.on{background:var(--blue-d);}
+.toggle-switch::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.toggle-switch.on::after{transform:translateX(18px);}
 
 /* modal */
 .mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.32);z-index:200;align-items:flex-end;justify-content:center;}
@@ -311,6 +319,25 @@ select,input{font-family:inherit;}
 
 <!-- STATS -->
 <div id="page-stats" class="page">
+  <!-- 收支總覽 -->
+  <div id="stats-summary-card" style="background:linear-gradient(135deg,#1a5fa0,#3B82C4);border-radius:var(--radius);padding:1.1rem 1.3rem;color:#fff;margin-bottom:.9rem;">
+    <div style="font-size:.78rem;opacity:.85;margin-bottom:.5rem;" id="stats-period-label">本月</div>
+    <div style="display:flex;gap:1rem;">
+      <div style="flex:1;background:rgba(255,255,255,.15);border-radius:10px;padding:.65rem;">
+        <div style="font-size:.72rem;opacity:.85;">💰 收入</div>
+        <div style="font-size:1.05rem;font-weight:700;margin-top:2px;" id="stats-total-income">NT$ 0</div>
+      </div>
+      <div style="flex:1;background:rgba(255,255,255,.15);border-radius:10px;padding:.65rem;">
+        <div style="font-size:.72rem;opacity:.85;">💸 支出</div>
+        <div style="font-size:1.05rem;font-weight:700;margin-top:2px;" id="stats-total-expense">NT$ 0</div>
+      </div>
+      <div style="flex:1;background:rgba(255,255,255,.15);border-radius:10px;padding:.65rem;">
+        <div style="font-size:.72rem;opacity:.85;">💵 結餘</div>
+        <div style="font-size:1.05rem;font-weight:700;margin-top:2px;" id="stats-total-balance">NT$ 0</div>
+      </div>
+    </div>
+  </div>
+
   <div class="stats-selectors">
     <input class="stats-sel" type="number" id="stats-year" min="2026" max="2099" placeholder="年份" onchange="renderStats()" oninput="renderStats()" style="width:90px;text-align:center;">
     <select class="stats-sel" id="stats-month" onchange="renderStats()">
@@ -407,6 +434,11 @@ select,input{font-family:inherit;}
   </div>
   <div class="sec-title">資料管理</div>
   <div class="setting-section">
+    <div class="setting-row" onclick="toggleAutoBackup()">
+      <div class="s-icon si-b">☁️</div>
+      <div class="s-label">自動備份到 Google Drive</div>
+      <div id="backup-toggle" class="toggle-switch on"></div>
+    </div>
     <div class="setting-row" onclick="exportCSV()">
       <div class="s-icon si-g">📥</div><div class="s-label">匯出 CSV</div><div style="color:var(--text3);">›</div>
     </div>
@@ -796,15 +828,25 @@ const DB={
     const {data,error}=await _sb.from('shared_transactions')
       .select('*').eq('book_id',bookId).order('date',{ascending:false});
     if(error||!data) return [];
-    return data;
+    // 轉換回 camelCase
+    return data.map(r=>({
+      id:r.id, bookId:r.book_id, type:r.type, amount:r.amount,
+      catId:r.cat_id||'other', subCat:r.sub_cat||'',
+      note:r.note||'', date:r.date, who:r.who_name||'',
+      goalId:r.goal_id||'',
+    }));
   },
 
   async insertSharedTx(tx,bookId){
     if(!isCloud()) return;
     const whoName=_user.user_metadata?.full_name||_user.email||'我';
-    const {error}=await _sb.from('shared_transactions').insert({
-      ...tx, book_id:bookId, user_id:_user.id, who_name:whoName
-    });
+    const row={
+      id:tx.id, book_id:bookId, user_id:_user.id, who_name:whoName,
+      type:tx.type, amount:tx.amount,
+      cat_id:tx.catId||'other', sub_cat:tx.subCat||'',
+      note:tx.note||'', date:tx.date, goal_id:tx.goalId||''
+    };
+    const {error}=await _sb.from('shared_transactions').insert(row);
     if(error) console.error('insert shared tx',error);
   },
 
@@ -1434,7 +1476,23 @@ function getStatsTx(){
 
 function renderStats(){
   buildPieTabs();
-  const tx=getStatsTx(); renderPieChart(tx); renderCatStats(tx);
+  const tx=getStatsTx();
+  renderPieChart(tx); renderCatStats(tx);
+  // 更新總覽卡
+  const income=tx.filter(t=>t.type==='income'&&!t.goalId).reduce((s,t)=>s+Number(t.amount),0);
+  const expense=tx.filter(t=>t.type==='expense'&&!t.goalId).reduce((s,t)=>s+Number(t.amount),0);
+  const el_i=document.getElementById('stats-total-income');
+  const el_e=document.getElementById('stats-total-expense');
+  const el_b=document.getElementById('stats-total-balance');
+  const el_l=document.getElementById('stats-period-label');
+  if(el_i) el_i.textContent='NT$ '+fmt(income);
+  if(el_e) el_e.textContent='NT$ '+fmt(expense);
+  if(el_b) el_b.textContent='NT$ '+fmt(income-expense);
+  if(el_l){
+    const y=document.getElementById('stats-year')?.value||'';
+    const m=parseInt(document.getElementById('stats-month')?.value||'0');
+    el_l.textContent=m===0?y+'年全年':y+'年 '+m+'月';
+  }
 }
 
 function renderPieChart(tx){
@@ -1482,11 +1540,21 @@ function renderCatStats(tx){
     const cats=[...getCats('expense'),...getCats('income')];
     const cat=cats.find(c=>c.id===cid)||{e:'📦',n:cid};
     const pct=total?Math.round(v/total*100):0;
+    const color=CAT_COLORS[i%CAT_COLORS.length];
     return `<div class="cat-stat-item">
-      <div class="cat-dot" style="background:${CAT_COLORS[i%CAT_COLORS.length]}"></div>
-      <div class="cat-stat-name">${sub?`${cat.e} ${sub}`:`${cat.e} ${cat.n}`}</div>
-      <div class="cat-stat-pct">${pct}%</div>
-      <div class="cat-stat-amt">NT$${fmt(v)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="cat-dot" style="background:${color}"></div>
+          <div class="cat-stat-name">${sub?`${cat.e} ${sub}`:`${cat.e} ${cat.n}`}</div>
+          <div class="cat-stat-pct">${pct}%</div>
+          <div class="cat-stat-amt">NT$${fmt(v)}</div>
+        </div>
+        <div style="margin-left:18px;margin-top:4px;">
+          <div class="cat-stat-bar-wrap">
+            <div class="cat-stat-bar" style="width:${pct}%;background:${color};"></div>
+          </div>
+        </div>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1910,6 +1978,21 @@ const GD_CLIENT_ID = '336212546733-gd4pnho93vrkncl8d98arhdjb0tclm7g.apps.googleu
 const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 let _gdToken = null;
 
+function toggleAutoBackup(){
+  const enabled = localStorage.getItem('autoBackup') !== 'off';
+  const newState = !enabled;
+  localStorage.setItem('autoBackup', newState ? 'on' : 'off');
+  const el = document.getElementById('backup-toggle');
+  if(el){ el.classList.toggle('on', newState); }
+  toast(newState ? '☁️ 自動備份已開啟' : '自動備份已關閉');
+}
+
+function initBackupToggle(){
+  const enabled = localStorage.getItem('autoBackup') !== 'off';
+  const el = document.getElementById('backup-toggle');
+  if(el) el.classList.toggle('on', enabled);
+}
+
 function scheduleAutoBackup(){
   const lastBackup = localStorage.getItem('lastBackupDate');
   const todayStr = today();
@@ -1919,7 +2002,8 @@ function scheduleAutoBackup(){
 }
 
 async function autoBackup(){
-  if(!isCloud()) return; // 本機模式不自動備份
+  if(!isCloud()) return;
+  if(localStorage.getItem('autoBackup') === 'off') return; // 使用者關閉自動備份
   try{
     await doGDriveBackup(true);
   }catch(e){
@@ -2057,7 +2141,7 @@ function switchPage(name){
   if(name==='stats'){buildPieTabs();renderStats();}
   if(name==='budget'){fillRecurCats();renderBudget();}
   if(name==='wealth'){renderWealth();}
-  if(name==='settings')updateCatCounts();
+  if(name==='settings'){ updateCatCounts(); initBackupToggle(); }
 }
 
 function openMo(id){
