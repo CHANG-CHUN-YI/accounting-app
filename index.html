@@ -880,11 +880,7 @@ const DB={
   },
 
   async updateTx(id, updates){
-    if(!isCloud()){ console.warn('updateTx: not cloud'); return; }
-    if(!_user){ console.error('updateTx: _user is null, re-fetching session...'); 
-      const {data:{session}}=await _sb.auth.getSession();
-      if(session) _user=session.user; else { console.error('session lost'); return; }
-    }
+    if(!isCloud()) return;
     const row={};
     if(updates.type!==undefined) row.type=updates.type;
     if(updates.amount!==undefined) row.amount=updates.amount;
@@ -894,10 +890,7 @@ const DB={
     if(updates.date!==undefined) row.date=updates.date;
     if(updates.who!==undefined) row.who=updates.who;
     if(updates.goalId!==undefined) row.goal_id=updates.goalId;
-    console.log('updateTx:', id, row, 'user:', _user.id);
-    const {data, error}=await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id).select();
-    console.log('updateTx result:', data, error);
-    if(error) console.error('updateTx error',error);
+    const {error}=await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id);
   },
 
   async updateSharedTx(id, updates){
@@ -1675,7 +1668,6 @@ function updateEditSubCats(){
 async function saveTxEdit(){
   const id=document.getElementById('edit-tx-id').value;
   const amount=parseFloat(document.getElementById('edit-amount').value);
-  console.log('saveTxEdit called, id:', id, 'amount:', amount, 'isCloud:', isCloud(), '_user:', _user?.id);
   if(!amount||amount<=0){toast('請輸入正確金額');return;}
   const updates={
     type:editTxType,
@@ -1686,9 +1678,7 @@ async function saveTxEdit(){
     date:document.getElementById('edit-date').value,
   };
   const book=getBook();
-  console.log('saveTxEdit book:', book?.id, book?.type, 'isCloud:', isCloud());
   if(book?.type==='shared'&&isCloud()){
-    console.log('→ 走共同帳本路徑');
     // 先更新 Supabase，等完成後再更新 cache
     await DB.updateSharedTx(id,updates);
     if(sharedTxCache[curBook]){
@@ -1696,7 +1686,6 @@ async function saveTxEdit(){
       if(idx>=0) sharedTxCache[curBook][idx]={...sharedTxCache[curBook][idx],...updates};
     }
   } else {
-    console.log('→ 走個人帳本路徑, calling updateTx');
     await DB.updateTx(id,updates);
     // 再更新 localStorage（用 Supabase 回傳確認後的資料）
     const txs=DB.getTxs();
@@ -1712,7 +1701,6 @@ async function saveTxEdit(){
 
 async function deleteTx(id){
   if(!confirm('確定刪除？'))return;
-  console.log('deleteTx called, id:', id, 'isCloud:', isCloud(), '_user:', _user?.id);
   // 找到這筆 tx，確認有沒有 goalId（刪除前先記錄）
   const allTxs=[...DB.getTxs(),...(sharedTxCache[curBook]||[])];
   const tx=allTxs.find(t=>t.id===id);
