@@ -1500,7 +1500,7 @@ async function saveTx(d){
     if(g){
       const txRef=tx?.id||('a'+Date.now());
       const newAlloc={id:'a_'+txRef, amount:d.amount,
-        note:('自動撥款'+(d.note?'・'+d.note:'')), date:d.date||today()};
+        note:d.note||'', date:d.date||today()};
       g.allocs.push(newAlloc);
       DB.saveGoals(goals);
       await DB.upsertAlloc(d.goalId, newAlloc);
@@ -2037,17 +2037,30 @@ function openAlloc(id){
 }
 
 function renderGoalSpendList(g){
-  const all=[...g.allocs.map(a=>({...a,_type:'alloc'})),...g.spends.map(s=>({...s,_type:'spend'}))];
-  const txs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id);
-  all.sort((a,b)=>b.date.localeCompare(a.date));
-  const spendHTML=[...all,...txs.map(t=>({...t,_type:'tx'}))].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,15).map(item=>{
-    if(item._type==='alloc') return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${item.note||'撥款'}</span><span style="color:var(--amber-d);font-weight:600;">→NT$${fmt(item.amount)}</span></div>`;
-    if(item._type==='spend') return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${item.note||''}</span><span style="color:#b07a74;font-weight:600;">-NT$${fmt(item.amount)}</span></div>`;
-    const cats=[...getCats('expense'),...getCats('income')]; const cat=cats.find(c=>c.id===item.catId)||{n:''};
-    const isInc=item.type==='income';
-    return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${esc(cat.n)}${item.note?' '+esc(item.note):''}</span><span style="color:${isInc?'var(--green-d)':'#b07a74'};font-weight:600;">${isInc?'→':'−'}NT$${fmt(item.amount)}</span></div>`;
-  }).join('');
-  document.getElementById('goal-spend-list').innerHTML=spendHTML||'<div style="font-size:.8rem;color:var(--text3);">尚無記錄</div>';
+  const allTxs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id);
+  const allCats=[...getCats('expense'),...getCats('income')];
+
+  // 把所有記錄合併：allocs、spends、tx，統一格式後按日期排序
+  const items=[
+    ...g.allocs.map(a=>({date:a.date, label:a.note||'撥款', amount:a.amount, dir:'in'})),
+    ...g.spends.map(s=>({date:s.date, label:s.note||'花費', amount:s.amount, dir:'out'})),
+    ...allTxs.map(t=>{
+      const cat=allCats.find(c=>c.id===t.catId)||{n:''};
+      const label=[cat.n, t.subCat, t.note].filter(Boolean).join(' · ');
+      return {date:t.date, label:label||'記帳', amount:t.amount, dir:t.type==='income'?'in':'out'};
+    }),
+  ].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,20);
+
+  document.getElementById('goal-spend-list').innerHTML=items.length?
+    items.map(item=>`
+      <div class="dep-item">
+        <span style="color:var(--text3);min-width:60px;">${item.date}</span>
+        <span style="flex:1;padding:0 8px;">${esc(item.label)}</span>
+        <span style="color:${item.dir==='in'?'var(--green-d)':'#b07a74'};font-weight:600;">
+          ${item.dir==='in'?'+':'−'}NT$${fmt(item.amount)}
+        </span>
+      </div>`).join(''):
+    '<div style="font-size:.8rem;color:var(--text3);">尚無記錄</div>';
 }
 
 async function doAlloc(){
