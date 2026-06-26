@@ -1675,6 +1675,7 @@ function updateEditSubCats(){
 async function saveTxEdit(){
   const id=document.getElementById('edit-tx-id').value;
   const amount=parseFloat(document.getElementById('edit-amount').value);
+  console.log('saveTxEdit called, id:', id, 'amount:', amount, 'isCloud:', isCloud(), '_user:', _user?.id);
   if(!amount||amount<=0){toast('請輸入正確金額');return;}
   const updates={
     type:editTxType,
@@ -1709,7 +1710,7 @@ async function saveTxEdit(){
 
 async function deleteTx(id){
   if(!confirm('確定刪除？'))return;
-
+  console.log('deleteTx called, id:', id, 'isCloud:', isCloud(), '_user:', _user?.id);
   // 找到這筆 tx，確認有沒有 goalId（刪除前先記錄）
   const allTxs=[...DB.getTxs(),...(sharedTxCache[curBook]||[])];
   const tx=allTxs.find(t=>t.id===id);
