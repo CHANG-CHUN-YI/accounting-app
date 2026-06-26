@@ -1333,6 +1333,11 @@ async function saveTx(d){
 
 async function deleteTx(id){
   if(!confirm('確定刪除？'))return;
+
+  // 找到這筆 tx，確認有沒有 goalId（刪除前先記錄）
+  const allTxs=[...DB.getTxs(),...(sharedTxCache[curBook]||[])];
+  const tx=allTxs.find(t=>t.id===id);
+
   const book=getBook();
   if(book?.type==='shared'&&isCloud()){
     await DB.deleteSharedTx(id);
@@ -1340,8 +1345,26 @@ async function deleteTx(id){
   } else {
     await DB.deleteTx(id);
   }
+
+  // 如果這筆有綁定存錢罐，同步移除存錢罐裡對應的自動記錄
+  if(tx?.goalId){
+    const goals=DB.getGoals();
+    const g=goals.find(g=>g.id===tx.goalId);
+    if(g){
+      if(tx.type==='income'){
+        // 移除對應的撥款記錄（找金額和日期相符的）
+        g.allocs=g.allocs.filter(a=>!(Math.abs(a.amount-Number(tx.amount))<0.01&&a.date===tx.date&&a.note.includes('自動撥款')));
+      } else {
+        // 移除對應的花費記錄
+        g.spends=g.spends.filter(s=>!(Math.abs(s.amount-Number(tx.amount))<0.01&&s.date===tx.date));
+      }
+      DB.saveGoals(goals);
+    }
+  }
+
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
+  if(document.getElementById('page-wealth').classList.contains('active'))renderWealth();
   toast('已刪除');
 }
 
@@ -1923,74 +1946,84 @@ function exportJSON(){
   a.download=`記帳本_${today()}.json`; a.click(); toast('JSON 已匯出');
 }
 
-async function importCSV(input){
-  const file=input.files[0];if(!file)return;
+function importCSV(input){
+  const file=input.files[0]; if(!file) return;
   const reader=new FileReader();
-  reader.onload=async e=>{
+  reader.onload=e=>{
     const raw=e.target.result.replace(/^\uFEFF/,'');
     const lines=raw.split(/\r?\n/);
     const header=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
     const colIdx={
-      type:    header.findIndex(h=>h==='類型'||h==='type'),
-      amount:  header.findIndex(h=>h==='金額'||h==='amount'),
-      catId:   header.findIndex(h=>h==='分類'||h==='catId'),
-      subCat:  header.findIndex(h=>h==='子分類'||h==='subCat'),
-      note:    header.findIndex(h=>h==='備註'||h==='note'),
-      date:    header.findIndex(h=>h==='日期'||h==='date'),
-      who:     header.findIndex(h=>h==='記帳者'||h==='who'),
-      goalId:  header.findIndex(h=>h==='目標'||h==='goalId'),
+      type:   header.findIndex(h=>h==='類型'||h==='type'),
+      amount: header.findIndex(h=>h==='金額'||h==='amount'),
+      catId:  header.findIndex(h=>h==='分類'||h==='catId'),
+      subCat: header.findIndex(h=>h==='子分類'||h==='subCat'),
+      note:   header.findIndex(h=>h==='備註'||h==='note'),
+      date:   header.findIndex(h=>h==='日期'||h==='date'),
+      who:    header.findIndex(h=>h==='記帳者'||h==='who'),
+      goalId: header.findIndex(h=>h==='目標'||h==='goalId'),
     };
     const useHeader=colIdx.type>=0&&colIdx.amount>=0&&colIdx.date>=0;
     const rows=[];
-    lines.slice(1).forEach(line=>{
-      if(!line.trim())return;
+    lines.slice(1).forEach((line,idx)=>{
+      if(!line.trim()) return;
       const p=parseCSVLine(line);
       const get=(col,pos)=>useHeader?(p[colIdx[col]]||'').trim():(p[pos]||'').trim();
       const typeRaw=get('type',1);
       const amount=parseFloat(get('amount',2));
-      const date=get('date',6);
-      if(!amount||!date)return;
+      const date=(get('date',6)||'').trim();
+      if(!amount||!date) return;
       rows.push({
-        type:typeRaw==='收入'||typeRaw==='income'?'income':'expense',
-        amount, catId:get('catId',3)||'other', subCat:get('subCat',4)||'',
-        note:(get('note',5)||'').replace(/^"|"$/g,''),
-        date, who:get('who',7)||'', goalId:get('goalId',8)||'',
+        type: typeRaw==='收入'||typeRaw==='income'?'income':'expense',
+        amount, catId: get('catId',3)||'other', subCat: get('subCat',4)||'',
+        note: (get('note',5)||'').replace(/^"|"$/g,''),
+        date, who: get('who',7)||'', goalId: get('goalId',8)||'',
+        // 每筆給唯一 id
+        _uid: `imp_${Date.now()}_${idx}_${Math.random().toString(36).slice(2,5)}`,
       });
     });
-    if(!rows.length){toast('沒有有效資料');return;}
+    if(!rows.length){ toast('沒有有效資料'); return; }
     toast(`匯入中，共 ${rows.length} 筆…`);
-
-    if(isCloud()){
-      // 雲端模式：批次寫入 Supabase
-      const supaRows=rows.map(r=>({
-        id:Date.now()+'_'+Math.random().toString(36).slice(2,6),
-        user_id:_user.id, book_id:curBook,
-        type:r.type, amount:r.amount,
-        cat_id:r.catId, sub_cat:r.subCat,
-        note:r.note, date:r.date,
-        who:r.who, goal_id:r.goalId,
-      }));
-      // 每次最多 50 筆批次插入
-      for(let i=0;i<supaRows.length;i+=50){
-        const batch=supaRows.slice(i,i+50);
-        const {error}=await _sb.from('transactions').insert(batch);
-        if(error) console.error('import batch error',error);
-      }
-      // 重新從雲端拉資料
-      await DB.fetchTxs();
-    } else {
-      // 本機模式
-      const txs=DB.getTxs();
-      rows.forEach(r=>{
-        txs.unshift({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),
-          bookId:curBook,...r});
-      });
-      DB.saveTxs(txs);
-    }
-    renderHome();
-    toast(`✓ 已匯入 ${rows.length} 筆`);
+    // 用 Promise 確保 async 寫入完成
+    doImport(rows).then(count=>{
+      renderHome();
+      toast(`✓ 已匯入 ${count} 筆`);
+    }).catch(err=>{
+      console.error('import error',err);
+      toast('匯入失敗，請查看 Console');
+    });
   };
   reader.readAsText(file,'utf-8'); input.value='';
+}
+
+async function doImport(rows){
+  if(isCloud()){
+    const supaRows=rows.map(r=>({
+      id: r._uid,
+      user_id: _user.id, book_id: curBook,
+      type: r.type, amount: r.amount,
+      cat_id: r.catId, sub_cat: r.subCat,
+      note: r.note, date: r.date,
+      who: r.who, goal_id: r.goalId,
+    }));
+    let errorCount=0;
+    for(let i=0;i<supaRows.length;i+=50){
+      const batch=supaRows.slice(i,i+50);
+      const {error}=await _sb.from('transactions').insert(batch);
+      if(error){ console.error('import batch',i,error); errorCount++; }
+    }
+    if(errorCount>0) console.warn(`${errorCount} 批次寫入失敗`);
+    await DB.fetchTxs();
+  } else {
+    const txs=DB.getTxs();
+    rows.forEach(r=>{
+      txs.unshift({id:r._uid, bookId:curBook,
+        type:r.type, amount:r.amount, catId:r.catId, subCat:r.subCat,
+        note:r.note, date:r.date, who:r.who, goalId:r.goalId});
+    });
+    DB.saveTxs(txs);
+  }
+  return rows.length;
 }
 
 // RFC 4180 簡易 CSV 解析（處理引號內含逗號的欄位）
