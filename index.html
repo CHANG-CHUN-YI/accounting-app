@@ -577,22 +577,14 @@ select,input{font-family:inherit;}
 </div></div>
 
 <div class="mo" id="mo-alloc" onclick="bgClose(event,'mo-alloc')"><div class="md">
-  <div class="md-title" id="alloc-title">撥款 <button class="md-close" onclick="closeMo('mo-alloc')">✕</button></div>
-  <div style="font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:.8rem;">撥款 = 從日常餘額移出，專用於此目標。花費直接在存錢罐內記錄，不影響日常統計。</div>
-  <label class="ml">撥款金額（NT$）</label>
-  <input class="mi" type="number" id="alloc-amt" placeholder="0" inputmode="decimal">
-  <label class="ml">備註</label><input class="mi" type="text" id="alloc-note" placeholder="選填">
-  <button class="mb amber" onclick="doAlloc()">撥款</button>
-  <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:.8rem;">
-    <div style="font-size:.79rem;font-weight:600;color:var(--text2);margin-bottom:6px;">花費記錄（從罐子裡花掉的）</div>
-    <div id="goal-spend-list"></div>
-    <div style="margin-top:8px;">
-      <div style="font-size:.79rem;font-weight:600;color:var(--text2);margin-bottom:5px;">直接記錄花費</div>
-      <input class="mi" type="number" id="goal-spend-amt" placeholder="花費金額" inputmode="decimal" style="margin-bottom:5px;">
-      <input class="mi" type="text" id="goal-spend-note" placeholder="花費備註">
-      <button class="mb amber" onclick="addGoalSpend()" style="margin-top:6px;">記錄花費</button>
-    </div>
-  </div>
+  <div class="md-title" id="alloc-title">收支記錄 <button class="md-close" onclick="closeMo('mo-alloc')">✕</button></div>
+  <p style="font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:.8rem;">
+    在首頁記帳時選擇此存錢罐，收支記錄會自動出現在這裡。
+  </p>
+  <div id="goal-spend-list"></div>
+  <!-- 保留隱藏欄位供舊程式碼用 -->
+  <input type="hidden" id="alloc-amt"><input type="hidden" id="alloc-note">
+  <input type="hidden" id="goal-spend-amt"><input type="hidden" id="goal-spend-note">
 </div></div>
 
 <!-- asset modals -->
@@ -2037,29 +2029,22 @@ function openAlloc(id){
 }
 
 function renderGoalSpendList(g){
-  const allTxs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id);
+  // 只顯示有 goalId 的 tx，不顯示 allocs/spends 避免重複
+  const txs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id)
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,20);
   const allCats=[...getCats('expense'),...getCats('income')];
-
-  // 把所有記錄合併：allocs、spends、tx，統一格式後按日期排序
-  const items=[
-    ...g.allocs.map(a=>({date:a.date, label:a.note||'撥款', amount:a.amount, dir:'in'})),
-    ...g.spends.map(s=>({date:s.date, label:s.note||'花費', amount:s.amount, dir:'out'})),
-    ...allTxs.map(t=>{
-      const cat=allCats.find(c=>c.id===t.catId)||{n:''};
-      const label=[cat.n, t.subCat, t.note].filter(Boolean).join(' · ');
-      return {date:t.date, label:label||'記帳', amount:t.amount, dir:t.type==='income'?'in':'out'};
-    }),
-  ].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,20);
-
-  document.getElementById('goal-spend-list').innerHTML=items.length?
-    items.map(item=>`
-      <div class="dep-item">
-        <span style="color:var(--text3);min-width:60px;">${item.date}</span>
-        <span style="flex:1;padding:0 8px;">${esc(item.label)}</span>
-        <span style="color:${item.dir==='in'?'var(--green-d)':'#b07a74'};font-weight:600;">
-          ${item.dir==='in'?'+':'−'}NT$${fmt(item.amount)}
-        </span>
-      </div>`).join(''):
+  document.getElementById('goal-spend-list').innerHTML=txs.length?
+    txs.map(t=>{
+      const cat=allCats.find(c=>c.id===t.catId)||{e:'',n:''};
+      const parts=[cat.e+' '+cat.n, t.subCat, t.note].filter(s=>s&&s.trim());
+      const label=parts.join(' · ');
+      const isInc=t.type==='income';
+      return `<div class="dep-item">
+        <span style="color:var(--text3);min-width:60px;">${t.date}</span>
+        <span style="flex:1;padding:0 8px;font-size:.82rem;">${esc(label)}</span>
+        <span style="font-weight:600;color:${isInc?'var(--green-d)':'#b07a74'};">${isInc?'+':'−'}NT$${fmt(t.amount)}</span>
+      </div>`;
+    }).join(''):
     '<div style="font-size:.8rem;color:var(--text3);">尚無記錄</div>';
 }
 
