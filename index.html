@@ -1073,6 +1073,8 @@ async function showApp(){
 
   // 自動備份排程（每天一次）
   scheduleAutoBackup();
+  // 即時同步（Supabase Realtime）
+  setupRealtime();
 }
 
 // ══════════════════════════════════════════
@@ -1088,14 +1090,17 @@ async function loadUserSettings(){
 
   // 從雲端載入個人帳本設定（含分類、預算）
   if(settings.books && settings.books.length){
-    // 合併：雲端的個人帳本設定 + 本地的共同帳本
     const sharedLocalBooks = localBooks.filter(b=>b.type==='shared');
     DB.saveBooks([...settings.books, ...sharedLocalBooks]);
   } else if(settings.budgets){
-    // 舊格式：只有預算，套用到第一個個人帳本
     const books = DB.getBooks();
     const personalBook = books.find(b=>b.type==='personal');
     if(personalBook){ personalBook.budgets=settings.budgets; DB.saveBooks(books); }
+  }
+
+  // 載入固定收支
+  if(settings.recurs && settings.recurs.length){
+    DB.saveRecurs(settings.recurs);
   }
 }
 
@@ -1683,7 +1688,7 @@ const _goalCharts={};
 function renderGoalPieChart(goalId,canvasId){
   const g=DB.getGoals().find(g=>g.id===goalId);
   if(!g)return;
-  const txs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===goalId);
+  const txs=getBookTxs().filter(t=>t.goalId===goalId);
   // 全部從 tx 算
   const totalIn=txs.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
   const totalOut=txs.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
@@ -1878,7 +1883,7 @@ async function saveCatBudget(catId){
 
 function fillRecurCats(){ fillCatSel('recur-cat',document.getElementById('recur-type').value); }
 
-function addRecur(){
+async function addRecur(){
   const name=document.getElementById('recur-name').value.trim();
   const amt=parseFloat(document.getElementById('recur-amt').value);
   if(!name||!amt){toast('請填寫名稱和金額');return;}
@@ -1886,12 +1891,18 @@ function addRecur(){
   const dayVal = parseInt(document.getElementById('recur-day').value)||1;
   const day = Math.min(Math.max(dayVal,1),31);
   recurs.push({id:'r'+Date.now(),bookId:curBook,type:document.getElementById('recur-type').value,name,amount:amt,catId:document.getElementById('recur-cat').value,day:String(day)});
-  DB.saveRecurs(recurs); closeMo('mo-add-recur');
+  DB.saveRecurs(recurs);
+  if(isCloud()) await DB.saveUserSettings({books:DB.getBooks().filter(b=>b.type!=='shared'),recurs:DB.getRecurs()});
+  closeMo('mo-add-recur');
   document.getElementById('recur-name').value=''; document.getElementById('recur-amt').value='';
   renderBudget(); toast('已新增');
 }
 
-function deleteRecur(id){ DB.saveRecurs(DB.getRecurs().filter(r=>r.id!==id)); renderBudget(); toast('已刪除'); }
+async function deleteRecur(id){
+  DB.saveRecurs(DB.getRecurs().filter(r=>r.id!==id));
+  if(isCloud()) await DB.saveUserSettings({books:DB.getBooks().filter(b=>b.type!=='shared'),recurs:DB.getRecurs()});
+  renderBudget(); toast('已刪除');
+}
 
 function renderRecurList(){
   const recurs=DB.getRecurs().filter(r=>r.bookId===curBook);
@@ -1984,7 +1995,7 @@ function renderGoals(){
   if(!goals.length){el.innerHTML=`<div style="text-align:center;padding:2.5rem 1rem;color:var(--text3);"><div style="font-size:2.3rem;margin-bottom:.5rem;">🎯</div><div style="font-size:.84rem;line-height:1.7;">還沒有目標<br>點右上角新增一個吧</div></div>`;return;}
   el.innerHTML=goals.map(g=>{
     // 全部從 tx 計算（allocs/spends 已棄用）
-    const goalTxs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id);
+    const goalTxs=getBookTxs().filter(t=>t.goalId===g.id);
     const allocated=goalTxs.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
     const spent=0;
     const txSpent=goalTxs.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
@@ -2047,7 +2058,7 @@ function openAlloc(id){
 
 function renderGoalSpendList(g){
   // 只顯示有 goalId 的 tx，不顯示 allocs/spends 避免重複
-  const txs=DB.getTxs().filter(t=>t.bookId===curBook&&t.goalId===g.id)
+  const txs=getBookTxs().filter(t=>t.goalId===g.id)
     .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,20);
   const allCats=[...getCats('expense'),...getCats('income')];
   document.getElementById('goal-spend-list').innerHTML=txs.length?
@@ -2367,6 +2378,92 @@ function initBackupToggle(){
   const enabled = localStorage.getItem('autoBackup') !== 'off';
   const el = document.getElementById('backup-toggle');
   if(el) el.classList.toggle('on', enabled);
+}
+
+// ══════════════════════════════════════════
+// Supabase Realtime 即時同步
+// ══════════════════════════════════════════
+let _realtimeChannel = null;
+
+function setupRealtime(){
+  if(!isCloud()) return;
+  // 如果已有頻道先清除
+  if(_realtimeChannel){
+    _sb.removeChannel(_realtimeChannel);
+    _realtimeChannel = null;
+  }
+
+  _realtimeChannel = _sb.channel('db-changes')
+    // 個人交易記錄即時更新
+    .on('postgres_changes',{
+      event: '*',
+      schema: 'public',
+      table: 'transactions',
+      filter: `user_id=eq.${_user.id}`
+    }, async ()=>{
+      await DB.fetchTxs();
+      renderHome();
+      if(document.getElementById('page-stats').classList.contains('active')) renderStats();
+      if(document.getElementById('page-budget').classList.contains('active')) renderBudget();
+    })
+    // 共同帳本交易記錄即時更新
+    .on('postgres_changes',{
+      event: '*',
+      schema: 'public',
+      table: 'shared_transactions',
+    }, async (payload)=>{
+      const bookId = payload.new?.book_id || payload.old?.book_id;
+      if(!bookId || !sharedBooks[bookId]) return;
+      // 只更新當前顯示的共同帳本
+      await fetchSharedTxsForBook(bookId);
+      if(curBook === bookId){
+        renderHome();
+        if(document.getElementById('page-stats').classList.contains('active')) renderStats();
+      }
+    })
+    // 存錢罐即時更新
+    .on('postgres_changes',{
+      event: '*',
+      schema: 'public',
+      table: 'goals',
+      filter: `user_id=eq.${_user.id}`
+    }, async ()=>{
+      await loadGoalsFromCloud();
+      if(document.getElementById('page-wealth').classList.contains('active')) renderWealth();
+      fillGoalChips();
+    })
+    // 資金帳戶即時更新
+    .on('postgres_changes',{
+      event: '*',
+      schema: 'public',
+      table: 'assets',
+      filter: `user_id=eq.${_user.id}`
+    }, async ()=>{
+      await loadAssetsFromCloud();
+      if(document.getElementById('page-wealth').classList.contains('active')) renderWealth();
+    })
+    .subscribe((status)=>{
+      if(status === 'SUBSCRIBED'){
+        console.log('Realtime 連線成功');
+        document.getElementById('mode-badge').textContent='☁️ 即時同步';
+      } else if(status === 'CHANNEL_ERROR'){
+        console.warn('Realtime 連線失敗，改用輪詢');
+        startPolling();
+      }
+    });
+}
+
+// Realtime 不可用時改用輪詢（每 30 秒自動更新）
+let _pollTimer = null;
+function startPolling(){
+  if(_pollTimer) return;
+  _pollTimer = setInterval(async()=>{
+    if(!isCloud()) return;
+    await DB.fetchTxs();
+    renderHome();
+    // 如果停在共同帳本也更新
+    if(isSharedBook) await fetchSharedTxsForBook(curBook);
+  }, 30000);
 }
 
 function scheduleAutoBackup(){
