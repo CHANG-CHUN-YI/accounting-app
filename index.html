@@ -1954,9 +1954,12 @@ async function addGoal(){
   const name=document.getElementById('goal-name-inp').value.trim();
   if(!name){toast('請輸入名稱');return;}
   const goals=DB.getGoals();
-  goals.push({id:'g'+Date.now(),bookId:curBook,e:goalEmoji,name,target:parseFloat(document.getElementById('goal-target-inp').value)||0,note:document.getElementById('goal-note-inp').value.trim(),allocs:[],spends:[],createdAt:today()});
+  const newGoal={id:'g'+Date.now(),bookId:curBook,e:goalEmoji,name,
+    target:parseFloat(document.getElementById('goal-target-inp').value)||0,
+    note:document.getElementById('goal-note-inp').value.trim(),
+    allocs:[],spends:[],createdAt:today()};
+  goals.push(newGoal);
   DB.saveGoals(goals);
-  // 同步到 Supabase
   await DB.upsertGoal(newGoal);
   closeMo('mo-add-goal');
   document.getElementById('goal-name-inp').value=''; document.getElementById('goal-target-inp').value=''; document.getElementById('goal-note-inp').value='';
@@ -2079,7 +2082,11 @@ async function addAsset(){
   const name=document.getElementById('asset-name-inp').value.trim();
   if(!name){toast('請輸入帳戶名稱');return;}
   const assets=DB.getAssets();
-  assets.push({id:'ast'+Date.now(),bookId:curBook,e:assetEmoji,name,initAmount:parseFloat(document.getElementById('asset-init-inp').value)||0,note:document.getElementById('asset-note-inp').value.trim(),txs:[],createdAt:today()});
+  const newAsset={id:'ast'+Date.now(),bookId:curBook,e:assetEmoji,name,
+    initAmount:parseFloat(document.getElementById('asset-init-inp').value)||0,
+    note:document.getElementById('asset-note-inp').value.trim(),
+    txs:[],createdAt:today()};
+  assets.push(newAsset);
   DB.saveAssets(assets);
   await DB.upsertAsset(newAsset);
   closeMo('mo-add-asset');
