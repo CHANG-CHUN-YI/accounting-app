@@ -837,9 +837,10 @@ const DB={
     }));
   },
 
-  async insertSharedTx(tx,bookId){
+  async insertSharedTx(tx,bookId,whoOverride=''){
     if(!isCloud()) return;
-    const whoName=_user.user_metadata?.full_name||_user.email||'我';
+    const myName=_user.user_metadata?.full_name||_user.email||'我';
+    const whoName=whoOverride||myName;
     const row={
       id:tx.id, book_id:bookId, user_id:_user.id, who_name:whoName,
       type:tx.type, amount:tx.amount,
@@ -1337,9 +1338,17 @@ function addTx(override){
 
 function renderWhoList(){
   const book=getBook();
+  // 取得共同帳本的所有成員名稱（包含 Supabase 的 member_names）
+  const sb=sharedBooks[curBook];
+  let members=[];
+  if(sb&&sb.member_names){
+    members=Object.values(sb.member_names);
+  } else if(book.members&&book.members.length){
+    members=book.members;
+  }
   document.getElementById('who-list').innerHTML=
-    book.members.map(m=>`<button onclick="confirmWho('${esc(m)}')" style="display:block;width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1.5px solid var(--border);margin-bottom:7px;font-size:.91rem;font-weight:500;">${m}</button>`).join('')+
-    `<button onclick="confirmWho('')" style="display:block;width:100%;text-align:center;padding:10px;border-radius:10px;border:1.5px dashed var(--border);margin-bottom:7px;font-size:.84rem;color:var(--text3);">不指定</button>`;
+    members.map(m=>`<button onclick="confirmWho('${esc(m)}')" style="display:block;width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1.5px solid var(--border);margin-bottom:7px;font-size:.91rem;font-weight:500;">${esc(m)}</button>`).join('')+
+    `<button onclick="confirmWho('')" style="display:block;width:100%;text-align:center;padding:10px;border-radius:10px;border:1.5px dashed var(--border);margin-bottom:7px;font-size:.84rem;color:var(--text3);">不指定（共同）</button>`;
 }
 function confirmWho(who){ closeMo('mo-who'); if(pendingTx){saveTx({...pendingTx,who});pendingTx=null;} }
 
@@ -1347,10 +1356,12 @@ async function saveTx(d){
   const tx={id:Date.now()+'',bookId:curBook,type:d.type,amount:d.amount,catId:d.catId,subCat:d.subCat||'',note:d.note||'',date:d.date,who:d.who||'',goalId:d.goalId||''};
   const book=getBook();
   if(book?.type==='shared'&&isCloud()){
-    await DB.insertSharedTx(tx, curBook);
+    await DB.insertSharedTx(tx, curBook, d.who||'');
     if(!sharedTxCache[curBook]) sharedTxCache[curBook]=[];
+    // who: 選擇的成員名；沒選則顯示登入者名
     const myName=_user?.user_metadata?.full_name||_user?.email||'我';
-    sharedTxCache[curBook].unshift({...tx, who:myName, who_name:myName});
+    const whoDisplay=d.who||myName;
+    sharedTxCache[curBook].unshift({...tx, who:whoDisplay, who_name:whoDisplay});
   } else {
     await DB.insertTx(tx);
   }
@@ -2103,6 +2114,24 @@ async function doImport(rows){
     });
     DB.saveTxs(txs);
   }
+  // 處理有 goalId 的記錄 → 同步到存錢罐
+  const goals = DB.getGoals();
+  let goalChanged = false;
+  rows.forEach(r=>{
+    if(!r.goalId) return;
+    const g = goals.find(g=>g.id===r.goalId);
+    if(!g) return;
+    if(r.type==='income'){
+      g.allocs.push({id:'a_imp_'+r._uid, amount:r.amount,
+        note:'CSV匯入・'+(r.note||''), date:r.date});
+    } else {
+      g.spends.push({id:'sp_imp_'+r._uid, amount:r.amount,
+        note:r.note||'', date:r.date});
+    }
+    goalChanged = true;
+  });
+  if(goalChanged) DB.saveGoals(goals);
+
   return rows.length;
 }
 
