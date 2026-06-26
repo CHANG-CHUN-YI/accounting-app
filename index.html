@@ -2044,7 +2044,8 @@ function renderGoalSpendList(g){
     if(item._type==='alloc') return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${item.note||'撥款'}</span><span style="color:var(--amber-d);font-weight:600;">→NT$${fmt(item.amount)}</span></div>`;
     if(item._type==='spend') return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${item.note||''}</span><span style="color:#b07a74;font-weight:600;">-NT$${fmt(item.amount)}</span></div>`;
     const cats=[...getCats('expense'),...getCats('income')]; const cat=cats.find(c=>c.id===item.catId)||{n:''};
-    return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${esc(cat.n)} ${item.note||''}</span><span style="color:#b07a74;font-weight:600;">-NT$${fmt(item.amount)}</span></div>`;
+    const isInc=item.type==='income';
+    return `<div class="dep-item"><span style="color:var(--text3);min-width:60px;">${item.date}</span><span style="flex:1;padding:0 8px;">${esc(cat.n)}${item.note?' '+esc(item.note):''}</span><span style="color:${isInc?'var(--green-d)':'#b07a74'};font-weight:600;">${isInc?'→':'−'}NT$${fmt(item.amount)}</span></div>`;
   }).join('');
   document.getElementById('goal-spend-list').innerHTML=spendHTML||'<div style="font-size:.8rem;color:var(--text3);">尚無記錄</div>';
 }
