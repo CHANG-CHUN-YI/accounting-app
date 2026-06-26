@@ -141,3 +141,18 @@ begin
   return jsonb_build_object('success', true, 'book_name', book.name);
 end;
 $$;
+
+-- ════════════════════════════════════════
+-- 新增：個人設定表（預算等）
+-- 在 Supabase SQL Editor 貼上執行
+-- ════════════════════════════════════════
+create table if not exists user_settings (
+  user_id     uuid primary key references auth.users(id) on delete cascade,
+  settings_json text default '{}',
+  updated_at  timestamptz default now()
+);
+
+alter table user_settings enable row level security;
+
+create policy "own settings" on user_settings
+  for all using (auth.uid() = user_id);
