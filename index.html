@@ -839,8 +839,8 @@ const DB={
 
   async insertSharedTx(tx,bookId,whoOverride=''){
     if(!isCloud()) return;
-    const myName=_user.user_metadata?.full_name||_user.email||'我';
-    const whoName=whoOverride||myName;
+    // whoOverride 是選擇的成員名，空字串代表不指定
+    const whoName=whoOverride||'';
     const row={
       id:tx.id, book_id:bookId, user_id:_user.id, who_name:whoName,
       type:tx.type, amount:tx.amount,
@@ -1486,8 +1486,8 @@ async function saveTx(d){
     await DB.insertSharedTx(tx, curBook, d.who||'');
     if(!sharedTxCache[curBook]) sharedTxCache[curBook]=[];
     // who: 選擇的成員名；沒選則顯示登入者名
-    const myName=_user?.user_metadata?.full_name||_user?.email||'我';
-    const whoDisplay=d.who||myName;
+    // who: 只用選擇的成員名，不指定就留空
+    const whoDisplay=d.who||'';
     sharedTxCache[curBook].unshift({...tx, who:whoDisplay, who_name:whoDisplay});
   } else {
     await DB.insertTx(tx);
@@ -1638,10 +1638,13 @@ function txHTML(t,compact){
   const sign=t.type==='expense'?'-':'+';
   const [,mm,dd]=t.date.split('-');
   const subTag=t.subCat?` <span style="font-size:.69rem;color:var(--text3);">· ${esc(t.subCat)}</span>`:'';
-  const whoDisplay=t.who_name||t.who||'';
-  const whoTag=whoDisplay?`<span class="who-badge">${esc(whoDisplay)}</span>`:'';
+  // 名字標籤：只在共同帳本且有指定成員時顯示
+  const book=getBook();
+  const whoDisplay=(book?.type==='shared')?(t.who_name||t.who||''):'';
+  const whoTag=(whoDisplay&&whoDisplay.trim())?`<span class="who-badge">${esc(whoDisplay)}</span>`:'';
+  // 存錢罐標籤：goalId 要有值且能找到對應存錢罐
   const goals=DB.getGoals();
-  const goal=t.goalId?goals.find(g=>g.id===t.goalId):null;
+  const goal=(t.goalId&&t.goalId.trim())?goals.find(g=>g.id===t.goalId):null;
   const goalTag=goal?`<span class="goal-badge">${goal.e} ${esc(goal.name)}</span>`:'';
   return `<div class="tx-item">
     <div class="tx-icon ${t.type}">${cat.e}</div>
@@ -2247,7 +2250,7 @@ async function doImport(rows){
       }));
       for(let i=0;i<supaRows.length;i+=50){
         const batch=supaRows.slice(i,i+50);
-        const {error}=await _sb.from('shared_transactions').insert(batch);
+        const {error}=await _sb.from('shared_transactions').upsert(batch,{onConflict:'id'});
         if(error) console.error('import shared batch',i,error);
       }
       await fetchSharedTxsForBook(curBook);
@@ -2263,7 +2266,8 @@ async function doImport(rows){
       }));
       for(let i=0;i<supaRows.length;i+=50){
         const batch=supaRows.slice(i,i+50);
-        const {error}=await _sb.from('transactions').insert(batch);
+        // upsert 避免重複匯入同一份 CSV 造成重複記錄
+        const {error}=await _sb.from('transactions').upsert(batch,{onConflict:'id'});
         if(error) console.error('import batch',i,error);
       }
       await DB.fetchTxs();
@@ -2278,31 +2282,34 @@ async function doImport(rows){
     });
     DB.saveTxs(txs);
   }
-  // 處理有 goalId 的記錄 → 同步到存錢罐
+  // 處理有 goalId 的記錄 → 同步到存錢罐（用 id 去重避免重複匯入）
   const goals = DB.getGoals();
   let goalChanged = false;
+  const goalPromises = [];
   rows.forEach(r=>{
     if(!r.goalId) return;
     const g = goals.find(g=>g.id===r.goalId);
     if(!g) return;
     if(r.type==='income'){
-      g.allocs.push({
-        id: 'a_'+r._uid,  // 含 txId 方便刪除時比對
-        amount: r.amount,
-        note: r.note||'CSV匯入',
-        date: r.date
-      });
+      const allocId='a_'+r._uid;
+      // 去重：已存在同 id 就跳過
+      if(g.allocs.find(a=>a.id===allocId)) return;
+      const alloc={id:allocId, amount:r.amount, note:r.note||'CSV匯入', date:r.date};
+      g.allocs.push(alloc);
+      goalPromises.push(DB.upsertAlloc(r.goalId, alloc));
     } else {
-      g.spends.push({
-        id: 'sp_'+r._uid,  // 含 txId 方便刪除時比對
-        amount: r.amount,
-        note: r.note||'',
-        date: r.date
-      });
+      const spendId='sp_'+r._uid;
+      if(g.spends.find(s=>s.id===spendId)) return;
+      const spend={id:spendId, amount:r.amount, note:r.note||'', date:r.date};
+      g.spends.push(spend);
+      goalPromises.push(DB.upsertSpend(r.goalId, spend));
     }
     goalChanged = true;
   });
-  if(goalChanged) DB.saveGoals(goals);
+  if(goalChanged){
+    DB.saveGoals(goals);
+    await Promise.all(goalPromises);
+  }
 
   return rows.length;
 }
