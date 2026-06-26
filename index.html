@@ -2021,9 +2021,14 @@ function renderBudget(){
   const catCfg=cfg.cats||{};
   // 只計算目前存在的分類預算（排除已刪除的分類）
   const existCatIds = new Set(getCats('expense').map(c=>c.id));
-  const totalAllocated = Object.entries(catCfg)
+  const catAllocated = Object.entries(catCfg)
     .filter(([id])=>existCatIds.has(id))
     .reduce((s,[,v])=>s+Number(v||0),0);
+  // 固定支出也計入分配
+  const recurExpense = DB.getRecurs()
+    .filter(r=>r.bookId===curBook&&r.type==='expense')
+    .reduce((s,r)=>s+Number(r.amount||0),0);
+  const totalAllocated = catAllocated + recurExpense;
 
   // 更新分配總覽
   const summaryEl = document.getElementById('cat-budget-summary');
@@ -2034,7 +2039,7 @@ function renderBudget(){
     const isOver = totalAllocated > tb;
     document.getElementById('cat-alloc-bar').style.width = allocPct+'%';
     document.getElementById('cat-alloc-bar').style.background = isOver ? '#b07a74' : allocPct>=90 ? 'var(--amber-d)' : 'var(--blue-d)';
-    document.getElementById('cat-alloc-amt').textContent = `NT$${fmt(totalAllocated)}`;
+    document.getElementById('cat-alloc-amt').textContent = `NT$${fmt(totalAllocated)}（含固定支出 NT$${fmt(recurExpense)}）`;
     document.getElementById('cat-alloc-pct').textContent = `${allocPct}%`;
     const remainEl = document.getElementById('cat-alloc-remain');
     if(isOver){
@@ -2077,15 +2082,19 @@ function previewCatBudget(catId, val){
   // 用當前輸入值預覽
   const existIds = new Set(getCats('expense').map(c=>c.id));
   const preview={...catCfg, [catId]: parseFloat(val)||0};
-  const totalAllocated=Object.entries(preview)
+  const catAlloc=Object.entries(preview)
     .filter(([id])=>existIds.has(id))
     .reduce((s,[,v])=>s+Number(v||0),0);
+  const recurExp=DB.getRecurs()
+    .filter(r=>r.bookId===curBook&&r.type==='expense')
+    .reduce((s,r)=>s+Number(r.amount||0),0);
+  const totalAllocated=catAlloc+recurExp;
   const remain=tb-totalAllocated;
   const allocPct=Math.min(Math.round(totalAllocated/tb*100),100);
   const isOver=totalAllocated>tb;
   document.getElementById('cat-alloc-bar').style.width=allocPct+'%';
   document.getElementById('cat-alloc-bar').style.background=isOver?'#b07a74':allocPct>=90?'var(--amber-d)':'var(--blue-d)';
-  document.getElementById('cat-alloc-amt').textContent=`NT$${fmt(totalAllocated)}`;
+  document.getElementById('cat-alloc-amt').textContent=`NT$${fmt(totalAllocated)}（含固定 NT$${fmt(recurExp)}）`;
   document.getElementById('cat-alloc-pct').textContent=`${allocPct}%`;
   const remainEl=document.getElementById('cat-alloc-remain');
   if(isOver){
