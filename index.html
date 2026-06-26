@@ -871,7 +871,11 @@ const DB={
   },
 
   async updateTx(id, updates){
-    if(!isCloud()) return;
+    if(!isCloud()){ console.warn('updateTx: not cloud'); return; }
+    if(!_user){ console.error('updateTx: _user is null, re-fetching session...'); 
+      const {data:{session}}=await _sb.auth.getSession();
+      if(session) _user=session.user; else { console.error('session lost'); return; }
+    }
     const row={};
     if(updates.type!==undefined) row.type=updates.type;
     if(updates.amount!==undefined) row.amount=updates.amount;
@@ -881,8 +885,10 @@ const DB={
     if(updates.date!==undefined) row.date=updates.date;
     if(updates.who!==undefined) row.who=updates.who;
     if(updates.goalId!==undefined) row.goal_id=updates.goalId;
-    const {error}=await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id);
-    if(error) console.error('updateTx',error);
+    console.log('updateTx:', id, row, 'user:', _user.id);
+    const {data, error}=await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id).select();
+    console.log('updateTx result:', data, error);
+    if(error) console.error('updateTx error',error);
   },
 
   async updateSharedTx(id, updates){
@@ -1695,6 +1701,9 @@ async function saveTxEdit(){
   }
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
+  // 確認更新成功
+  const check = DB.getTxs().find(t=>t.id===document.getElementById('edit-tx-id').value);
+  console.log('after edit, tx in cache:', check);
   toast('記錄已更新 ✓');
 }
 
