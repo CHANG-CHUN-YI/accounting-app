@@ -864,8 +864,10 @@ const DB={
     if(!isCloud()) return;
     // whoOverride 是選擇的成員名，空字串代表不指定
     const whoName=whoOverride||'';
+    // 確保 id 唯一
+    const uniqueId = tx.id.includes('_') ? tx.id : tx.id+'_'+Math.random().toString(36).slice(2,6);
     const row={
-      id:tx.id, book_id:bookId, user_id:_user.id, who_name:whoName,
+      id:uniqueId, book_id:bookId, user_id:_user.id, who_name:whoName,
       type:tx.type, amount:tx.amount,
       cat_id:tx.catId||'other', sub_cat:tx.subCat||'',
       note:tx.note||'', date:tx.date, goal_id:tx.goalId||''
@@ -1565,7 +1567,7 @@ function renderWhoList(){
 function confirmWho(who){ closeMo('mo-who'); if(pendingTx){saveTx({...pendingTx,who});pendingTx=null;} }
 
 async function saveTx(d){
-  const tx={id:Date.now()+'',bookId:curBook,type:d.type,amount:d.amount,catId:d.catId,subCat:d.subCat||'',note:d.note||'',date:d.date,who:d.who||'',goalId:d.goalId||''};
+  const tx={id:Date.now()+'_'+Math.random().toString(36).slice(2,6),bookId:curBook,type:d.type,amount:d.amount,catId:d.catId,subCat:d.subCat||'',note:d.note||'',date:d.date,who:d.who||'',goalId:d.goalId||''};
   const book=getBook();
   if(book?.type==='shared'&&isCloud()){
     await DB.insertSharedTx(tx, curBook, d.who||'');
@@ -2510,7 +2512,7 @@ function importCSV(input){
         note: (get('note',5)||'').replace(/^"|"$/g,''),
         date, who: get('who',7)||'', goalId: get('goalId',8)||'',
         // 每筆給唯一 id
-        _uid: `imp_${Date.now()}_${idx}_${Math.random().toString(36).slice(2,5)}`,
+        _uid: `imp_${Date.now()+idx}_${Math.random().toString(36).slice(2,8)}`,
       });
     });
     if(!rows.length){ toast('沒有有效資料'); return; }
