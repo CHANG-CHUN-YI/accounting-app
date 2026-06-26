@@ -856,6 +856,118 @@ const DB={
     await _sb.from('shared_transactions').delete().eq('id',id);
   },
 
+  // ══════════════════════════════
+  // 存錢罐雲端操作
+  // ══════════════════════════════
+  async fetchGoals(){
+    if(!isCloud()) return null;
+    const [
+      {data:goals},
+      {data:allocs},
+      {data:spends}
+    ] = await Promise.all([
+      _sb.from('goals').select('*').eq('user_id',_user.id),
+      _sb.from('goal_allocs').select('*').eq('user_id',_user.id),
+      _sb.from('goal_spends').select('*').eq('user_id',_user.id),
+    ]);
+    if(!goals) return null;
+    // 組合成前端格式
+    return goals.map(g=>({
+      id:g.id, bookId:g.book_id, e:g.emoji, name:g.name,
+      target:g.target||0, note:g.note||'', createdAt:g.created_at,
+      allocs:(allocs||[]).filter(a=>a.goal_id===g.id).map(a=>({
+        id:a.id, amount:a.amount, note:a.note||'', date:a.date
+      })),
+      spends:(spends||[]).filter(s=>s.goal_id===g.id).map(s=>({
+        id:s.id, amount:s.amount, note:s.note||'', date:s.date
+      })),
+    }));
+  },
+
+  async upsertGoal(g){
+    if(!isCloud()) return;
+    await _sb.from('goals').upsert({
+      id:g.id, user_id:_user.id, book_id:g.bookId||curBook,
+      emoji:g.e||'🎯', name:g.name, target:g.target||0,
+      note:g.note||'', created_at:g.createdAt||today()
+    },{onConflict:'id'});
+  },
+
+  async deleteGoal(id){
+    if(!isCloud()) return;
+    await _sb.from('goals').delete().eq('id',id).eq('user_id',_user.id);
+  },
+
+  async upsertAlloc(goalId, alloc){
+    if(!isCloud()) return;
+    await _sb.from('goal_allocs').upsert({
+      id:alloc.id, goal_id:goalId, user_id:_user.id,
+      amount:alloc.amount, note:alloc.note||'', date:alloc.date
+    },{onConflict:'id'});
+  },
+
+  async deleteAlloc(id){
+    if(!isCloud()) return;
+    await _sb.from('goal_allocs').delete().eq('id',id).eq('user_id',_user.id);
+  },
+
+  async upsertSpend(goalId, spend){
+    if(!isCloud()) return;
+    await _sb.from('goal_spends').upsert({
+      id:spend.id, goal_id:goalId, user_id:_user.id,
+      amount:spend.amount, note:spend.note||'', date:spend.date
+    },{onConflict:'id'});
+  },
+
+  async deleteSpend(id){
+    if(!isCloud()) return;
+    await _sb.from('goal_spends').delete().eq('id',id).eq('user_id',_user.id);
+  },
+
+  // ══════════════════════════════
+  // 資金帳戶雲端操作
+  // ══════════════════════════════
+  async fetchAssets(){
+    if(!isCloud()) return null;
+    const [
+      {data:assets},
+      {data:txs}
+    ] = await Promise.all([
+      _sb.from('assets').select('*').eq('user_id',_user.id),
+      _sb.from('asset_txs').select('*').eq('user_id',_user.id),
+    ]);
+    if(!assets) return null;
+    return assets.map(a=>({
+      id:a.id, bookId:a.book_id, e:a.emoji, name:a.name,
+      initAmount:a.init_amount||0, note:a.note||'', createdAt:a.created_at,
+      txs:(txs||[]).filter(t=>t.asset_id===a.id).map(t=>({
+        id:t.id, type:t.type, amount:t.amount, note:t.note||'', date:t.date
+      })),
+    }));
+  },
+
+  async upsertAsset(a){
+    if(!isCloud()) return;
+    await _sb.from('assets').upsert({
+      id:a.id, user_id:_user.id, book_id:a.bookId||curBook,
+      emoji:a.e||'🏦', name:a.name, init_amount:a.initAmount||0,
+      note:a.note||'', created_at:a.createdAt||today()
+    },{onConflict:'id'});
+  },
+
+  async deleteAsset(id){
+    if(!isCloud()) return;
+    await _sb.from('assets').delete().eq('id',id).eq('user_id',_user.id);
+  },
+
+  async upsertAssetTx(assetId, tx){
+    if(!isCloud()) return;
+    await _sb.from('asset_txs').upsert({
+      id:tx.id, asset_id:assetId, user_id:_user.id,
+      type:tx.type, amount:tx.amount, note:tx.note||'', date:tx.date
+    },{onConflict:'id'});
+  },
+
   // ── 個人設定（預算）雲端儲存 ──
   async saveUserSettings(settings){
     if(!isCloud()) return;
@@ -942,6 +1054,9 @@ async function showApp(){
     await loadSharedBooks();
     // 載入個人設定（預算）
     await loadUserSettings();
+    // 載入存錢罐和資金帳戶
+    await loadGoalsFromCloud();
+    await loadAssetsFromCloud();
   }
 
   // 把舊帳本的分類補上 subs（版本遷移）
@@ -1001,6 +1116,18 @@ async function savePersonalBudget(budgets){
     // 更新本地 sharedBooks cache
     if(sharedBooks[curBook]) sharedBooks[curBook].budgets=budgets;
   }
+}
+
+async function loadGoalsFromCloud(){
+  const data = await DB.fetchGoals();
+  if(!data) return; // 本機模式或載入失敗
+  DB.saveGoals(data);
+}
+
+async function loadAssetsFromCloud(){
+  const data = await DB.fetchAssets();
+  if(!data) return;
+  DB.saveAssets(data);
 }
 
 async function loadSharedBooks(){
@@ -1371,9 +1498,12 @@ async function saveTx(d){
     const goals=DB.getGoals();
     const g=goals.find(g=>g.id===d.goalId);
     if(g){
-      g.allocs.push({id:'a'+Date.now(),amount:d.amount,
-        note:('自動撥款'+(d.note?'・'+d.note:'')),date:d.date||today()});
+      const txRef=tx?.id||('a'+Date.now());
+      const newAlloc={id:'a_'+txRef, amount:d.amount,
+        note:('自動撥款'+(d.note?'・'+d.note:'')), date:d.date||today()};
+      g.allocs.push(newAlloc);
       DB.saveGoals(goals);
+      await DB.upsertAlloc(d.goalId, newAlloc);
     }
   }
   // 支出 + 選了存錢罐 → 自動記入花費
@@ -1381,9 +1511,12 @@ async function saveTx(d){
     const goals=DB.getGoals();
     const g=goals.find(g=>g.id===d.goalId);
     if(g){
-      g.spends.push({id:'sp'+Date.now(),amount:d.amount,
-        note:d.note||'',date:d.date||today()});
+      const txRef2=tx?.id||('sp'+Date.now());
+      const newSpend={id:'sp_'+txRef2, amount:d.amount,
+        note:d.note||'', date:d.date||today()};
+      g.spends.push(newSpend);
       DB.saveGoals(goals);
+      await DB.upsertSpend(d.goalId, newSpend);
     }
   }
 
@@ -1416,12 +1549,22 @@ async function deleteTx(id){
     const goals=DB.getGoals();
     const g=goals.find(g=>g.id===tx.goalId);
     if(g){
+      // 優先用 txId 精確比對，找不到再用金額+日期模糊比對
+      const txId=tx.id;
       if(tx.type==='income'){
-        // 移除對應的撥款記錄（找金額和日期相符的）
-        g.allocs=g.allocs.filter(a=>!(Math.abs(a.amount-Number(tx.amount))<0.01&&a.date===tx.date&&a.note.includes('自動撥款')));
+        const before=g.allocs.length;
+        // 先試精確比對（id 含 txId）
+        g.allocs=g.allocs.filter(a=>!a.id.includes(txId));
+        // 沒刪到的話改用金額+日期
+        if(g.allocs.length===before){
+          g.allocs=g.allocs.filter(a=>!(Math.abs(a.amount-Number(tx.amount))<0.01&&a.date===tx.date));
+        }
       } else {
-        // 移除對應的花費記錄
-        g.spends=g.spends.filter(s=>!(Math.abs(s.amount-Number(tx.amount))<0.01&&s.date===tx.date));
+        const before=g.spends.length;
+        g.spends=g.spends.filter(s=>!s.id.includes(txId));
+        if(g.spends.length===before){
+          g.spends=g.spends.filter(s=>!(Math.abs(s.amount-Number(tx.amount))<0.01&&s.date===tx.date));
+        }
       }
       DB.saveGoals(goals);
     }
@@ -1807,12 +1950,14 @@ function updateTotalAssets(){
 }
 
 // ── Goals (目標存錢罐) ──
-function addGoal(){
+async function addGoal(){
   const name=document.getElementById('goal-name-inp').value.trim();
   if(!name){toast('請輸入名稱');return;}
   const goals=DB.getGoals();
   goals.push({id:'g'+Date.now(),bookId:curBook,e:goalEmoji,name,target:parseFloat(document.getElementById('goal-target-inp').value)||0,note:document.getElementById('goal-note-inp').value.trim(),allocs:[],spends:[],createdAt:today()});
   DB.saveGoals(goals);
+  // 同步到 Supabase
+  await DB.upsertGoal(newGoal);
   closeMo('mo-add-goal');
   document.getElementById('goal-name-inp').value=''; document.getElementById('goal-target-inp').value=''; document.getElementById('goal-note-inp').value='';
   goalEmoji='🎯'; document.getElementById('goal-emoji-btn').textContent='🎯';
@@ -1898,37 +2043,45 @@ function renderGoalSpendList(g){
   document.getElementById('goal-spend-list').innerHTML=spendHTML||'<div style="font-size:.8rem;color:var(--text3);">尚無記錄</div>';
 }
 
-function doAlloc(){
+async function doAlloc(){
   const amt=parseFloat(document.getElementById('alloc-amt').value);
   if(!amt||amt<=0){toast('請輸入金額');return;}
   const goals=DB.getGoals(),g=goals.find(g=>g.id===allocGoalId);
-  g.allocs.push({id:'a'+Date.now(),amount:amt,note:document.getElementById('alloc-note').value.trim(),date:today()});
-  DB.saveGoals(goals); document.getElementById('alloc-amt').value=''; document.getElementById('alloc-note').value='';
+  const alloc={id:'a_'+Date.now(),amount:amt,note:document.getElementById('alloc-note').value.trim(),date:today()};
+  g.allocs.push(alloc);
+  DB.saveGoals(goals);
+  await DB.upsertAlloc(allocGoalId, alloc);
+  document.getElementById('alloc-amt').value=''; document.getElementById('alloc-note').value='';
   renderGoalSpendList(g); renderGoals(); toast(`已撥款 NT$${fmt(amt)}`);
 }
 
-function addGoalSpend(){
+async function addGoalSpend(){
   const amt=parseFloat(document.getElementById('goal-spend-amt').value);
   if(!amt||amt<=0){toast('請輸入金額');return;}
   const goals=DB.getGoals(),g=goals.find(g=>g.id===allocGoalId);
-  g.spends.push({id:'sp'+Date.now(),amount:amt,note:document.getElementById('goal-spend-note').value.trim(),date:today()});
-  DB.saveGoals(goals); document.getElementById('goal-spend-amt').value=''; document.getElementById('goal-spend-note').value='';
+  const spend={id:'sp_'+Date.now(),amount:amt,note:document.getElementById('goal-spend-note').value.trim(),date:today()};
+  g.spends.push(spend);
+  DB.saveGoals(goals);
+  await DB.upsertSpend(allocGoalId, spend);
+  document.getElementById('goal-spend-amt').value=''; document.getElementById('goal-spend-note').value='';
   renderGoalSpendList(g); renderGoals(); toast('花費已記錄');
 }
 
-function deleteGoal(id){
+async function deleteGoal(id){
   if(!confirm('確定刪除此存錢罐？'))return;
   DB.saveGoals(DB.getGoals().filter(g=>g.id!==id));
+  await DB.deleteGoal(id);
   renderGoals(); fillGoalChips(); toast('已刪除');
 }
 
 // ── Assets (資金帳戶) ──
-function addAsset(){
+async function addAsset(){
   const name=document.getElementById('asset-name-inp').value.trim();
   if(!name){toast('請輸入帳戶名稱');return;}
   const assets=DB.getAssets();
   assets.push({id:'ast'+Date.now(),bookId:curBook,e:assetEmoji,name,initAmount:parseFloat(document.getElementById('asset-init-inp').value)||0,note:document.getElementById('asset-note-inp').value.trim(),txs:[],createdAt:today()});
   DB.saveAssets(assets);
+  await DB.upsertAsset(newAsset);
   closeMo('mo-add-asset');
   document.getElementById('asset-name-inp').value=''; document.getElementById('asset-init-inp').value=''; document.getElementById('asset-note-inp').value='';
   assetEmoji='🏦'; document.getElementById('asset-emoji-btn').textContent='🏦';
@@ -1980,19 +2133,23 @@ function setAssetTxType(type){
   document.getElementById('asset-tx-out-btn').style.fontWeight=type==='out'?'700':'400';
 }
 
-function doAssetTx(){
+async function doAssetTx(){
   const amt=parseFloat(document.getElementById('asset-tx-amt').value);
   if(!amt||amt<=0){toast('請輸入金額');return;}
   const assets=DB.getAssets(),a=assets.find(a=>a.id===assetTxId);
   if(!a.txs)a.txs=[];
-  a.txs.push({id:'at'+Date.now(),type:assetTxType,amount:amt,note:document.getElementById('asset-tx-note').value.trim(),date:today()});
-  DB.saveAssets(assets); closeMo('mo-asset-tx'); renderAssets(); updateTotalAssets();
+  const atx={id:'at_'+Date.now(),type:assetTxType,amount:amt,note:document.getElementById('asset-tx-note').value.trim(),date:today()};
+  a.txs.push(atx);
+  DB.saveAssets(assets);
+  await DB.upsertAssetTx(assetTxId, atx);
+  closeMo('mo-asset-tx'); renderAssets(); updateTotalAssets();
   toast(`${assetTxType==='in'?'存入':'提領'} NT$${fmt(amt)}`);
 }
 
-function deleteAsset(id){
+async function deleteAsset(id){
   if(!confirm('確定刪除此帳戶？'))return;
   DB.saveAssets(DB.getAssets().filter(a=>a.id!==id));
+  await DB.deleteAsset(id);
   renderAssets(); updateTotalAssets(); toast('已刪除');
 }
 
@@ -2122,11 +2279,19 @@ async function doImport(rows){
     const g = goals.find(g=>g.id===r.goalId);
     if(!g) return;
     if(r.type==='income'){
-      g.allocs.push({id:'a_imp_'+r._uid, amount:r.amount,
-        note:'CSV匯入・'+(r.note||''), date:r.date});
+      g.allocs.push({
+        id: 'a_'+r._uid,  // 含 txId 方便刪除時比對
+        amount: r.amount,
+        note: r.note||'CSV匯入',
+        date: r.date
+      });
     } else {
-      g.spends.push({id:'sp_imp_'+r._uid, amount:r.amount,
-        note:r.note||'', date:r.date});
+      g.spends.push({
+        id: 'sp_'+r._uid,  // 含 txId 方便刪除時比對
+        amount: r.amount,
+        note: r.note||'',
+        date: r.date
+      });
     }
     goalChanged = true;
   });
