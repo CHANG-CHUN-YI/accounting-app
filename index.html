@@ -1677,33 +1677,24 @@ async function saveTxEdit(){
   };
   const book=getBook();
   if(book?.type==='shared'&&isCloud()){
-    // 更新 sharedTxCache
+    // 先更新 Supabase，等完成後再更新 cache
+    await DB.updateSharedTx(id,updates);
     if(sharedTxCache[curBook]){
       const idx=sharedTxCache[curBook].findIndex(t=>t.id===id);
       if(idx>=0) sharedTxCache[curBook][idx]={...sharedTxCache[curBook][idx],...updates};
     }
-    await DB.updateSharedTx(id,updates);
   } else {
-    // 更新 localStorage
+    // 先更新 Supabase
+    await DB.updateTx(id,updates);
+    // 再更新 localStorage（用 Supabase 回傳確認後的資料）
     const txs=DB.getTxs();
     const idx=txs.findIndex(t=>t.id===id);
     if(idx>=0) txs[idx]={...txs[idx],...updates};
     DB.saveTxs(txs);
-    await DB.updateTx(id,updates);
   }
   closeMo('mo-edit-tx');
-  // 重新從 Supabase 拉最新資料確保一致
-  const bookT=getBook();
-  if(bookT?.type==='shared'&&isCloud()){
-    await fetchSharedTxsForBook(curBook);
-  } else if(isCloud()){
-    await DB.fetchTxs();
-  }
   renderHome(); renderCal();
   if(document.getElementById('page-stats').classList.contains('active'))renderStats();
-  // 確認更新成功
-  const check = DB.getTxs().find(t=>t.id===document.getElementById('edit-tx-id').value);
-  console.log('after edit, tx in cache:', check);
   toast('記錄已更新 ✓');
 }
 
