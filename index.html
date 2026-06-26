@@ -1349,7 +1349,8 @@ async function saveTx(d){
   if(book?.type==='shared'&&isCloud()){
     await DB.insertSharedTx(tx, curBook);
     if(!sharedTxCache[curBook]) sharedTxCache[curBook]=[];
-    sharedTxCache[curBook].unshift({...tx, who_name:d.who||''});
+    const myName=_user?.user_metadata?.full_name||_user?.email||'我';
+    sharedTxCache[curBook].unshift({...tx, who:myName, who_name:myName});
   } else {
     await DB.insertTx(tx);
   }
@@ -1483,7 +1484,8 @@ function txHTML(t,compact){
   const sign=t.type==='expense'?'-':'+';
   const [,mm,dd]=t.date.split('-');
   const subTag=t.subCat?` <span style="font-size:.69rem;color:var(--text3);">· ${esc(t.subCat)}</span>`:'';
-  const whoTag=t.who?`<span class="who-badge">${esc(t.who)}</span>`:'';
+  const whoDisplay=t.who_name||t.who||'';
+  const whoTag=whoDisplay?`<span class="who-badge">${esc(whoDisplay)}</span>`:'';
   const goals=DB.getGoals();
   const goal=t.goalId?goals.find(g=>g.id===t.goalId):null;
   const goalTag=goal?`<span class="goal-badge">${goal.e} ${esc(goal.name)}</span>`:'';
@@ -2054,24 +2056,45 @@ function importCSV(input){
 }
 
 async function doImport(rows){
+  const book=getBook();
+  const isShared=book?.type==='shared';
+
   if(isCloud()){
-    const supaRows=rows.map(r=>({
-      id: r._uid,
-      user_id: _user.id, book_id: curBook,
-      type: r.type, amount: r.amount,
-      cat_id: r.catId, sub_cat: r.subCat,
-      note: r.note, date: r.date,
-      who: r.who, goal_id: r.goalId,
-    }));
-    let errorCount=0;
-    for(let i=0;i<supaRows.length;i+=50){
-      const batch=supaRows.slice(i,i+50);
-      const {error}=await _sb.from('transactions').insert(batch);
-      if(error){ console.error('import batch',i,error); errorCount++; }
+    if(isShared){
+      // 共同帳本 → shared_transactions
+      const whoName=_user.user_metadata?.full_name||_user.email||'我';
+      const supaRows=rows.map(r=>({
+        id: r._uid,
+        book_id: curBook, user_id: _user.id, who_name: whoName,
+        type: r.type, amount: r.amount,
+        cat_id: r.catId, sub_cat: r.subCat,
+        note: r.note, date: r.date, goal_id: r.goalId,
+      }));
+      for(let i=0;i<supaRows.length;i+=50){
+        const batch=supaRows.slice(i,i+50);
+        const {error}=await _sb.from('shared_transactions').insert(batch);
+        if(error) console.error('import shared batch',i,error);
+      }
+      await fetchSharedTxsForBook(curBook);
+    } else {
+      // 個人帳本 → transactions
+      const supaRows=rows.map(r=>({
+        id: r._uid,
+        user_id: _user.id, book_id: curBook,
+        type: r.type, amount: r.amount,
+        cat_id: r.catId, sub_cat: r.subCat,
+        note: r.note, date: r.date,
+        who: r.who, goal_id: r.goalId,
+      }));
+      for(let i=0;i<supaRows.length;i+=50){
+        const batch=supaRows.slice(i,i+50);
+        const {error}=await _sb.from('transactions').insert(batch);
+        if(error) console.error('import batch',i,error);
+      }
+      await DB.fetchTxs();
     }
-    if(errorCount>0) console.warn(`${errorCount} 批次寫入失敗`);
-    await DB.fetchTxs();
   } else {
+    // 本機模式
     const txs=DB.getTxs();
     rows.forEach(r=>{
       txs.unshift({id:r._uid, bookId:curBook,
