@@ -1040,7 +1040,7 @@ async function showApp(){
     await DB.fetchTxs();
     // 載入雲端共同帳本
     await loadSharedBooks();
-    // 載入個人設定（預算）
+    // 載入個人設定（含帳本分類）
     await loadUserSettings();
     // 載入存錢罐和資金帳戶
     await loadGoalsFromCloud();
@@ -1083,27 +1083,41 @@ async function loadUserSettings(){
   if(!isCloud()) return;
   const settings = await DB.fetchUserSettings();
   if(!settings) return;
-  // 把雲端的預算設定套用到個人帳本
-  const books = DB.getBooks();
-  const personalBook = books.find(b=>b.id==='b1'||b.type==='personal');
-  if(personalBook && settings.budgets){
-    personalBook.budgets = settings.budgets;
-    DB.saveBooks(books);
+
+  const localBooks = DB.getBooks();
+
+  // 從雲端載入個人帳本設定（含分類、預算）
+  if(settings.books && settings.books.length){
+    // 合併：雲端的個人帳本設定 + 本地的共同帳本
+    const sharedLocalBooks = localBooks.filter(b=>b.type==='shared');
+    DB.saveBooks([...settings.books, ...sharedLocalBooks]);
+  } else if(settings.budgets){
+    // 舊格式：只有預算，套用到第一個個人帳本
+    const books = DB.getBooks();
+    const personalBook = books.find(b=>b.type==='personal');
+    if(personalBook){ personalBook.budgets=settings.budgets; DB.saveBooks(books); }
   }
 }
 
 async function savePersonalBudget(budgets){
-  // 儲存到 localStorage
   const books=DB.getBooks(), book=books.find(b=>b.id===curBook);
   if(book){ book.budgets=budgets; DB.saveBooks(books); }
-  // 同步到雲端
   if(isCloud()&&getBook()?.type!=='shared'){
-    await DB.saveUserSettings({budgets});
+    await syncBooksToCloud();
   } else if(isCloud()&&getBook()?.type==='shared'){
     await DB.saveSharedBookBudgets(curBook, budgets);
-    // 更新本地 sharedBooks cache
     if(sharedBooks[curBook]) sharedBooks[curBook].budgets=budgets;
   }
+}
+
+// 把所有個人帳本設定（含分類、預算）同步到雲端
+async function syncBooksToCloud(){
+  if(!isCloud()) return;
+  const personalBooks=DB.getBooks().filter(b=>b.type!=='shared');
+  await DB.saveUserSettings({
+    books: personalBooks,
+    lastSync: new Date().toISOString(),
+  });
 }
 
 async function loadGoalsFromCloud(){
@@ -1270,6 +1284,7 @@ async function addBook(){
     const books=DB.getBooks();
     const nb={id:'b'+Date.now(),name,type:'personal',members:[],cats:dc(DEF_CATS),budgets:{total:0,cats:{}}};
     books.push(nb); DB.saveBooks(books);
+    await syncBooksToCloud();
     renderBookTabs(); switchBook(nb.id); toast(`「${name}」已建立`);
   }
 }
@@ -1366,20 +1381,24 @@ function renderCatMgrList(){
     </div>`).join('')||'<p style="font-size:.82rem;color:var(--text3);padding:.4rem 0;">尚無分類</p>';
 }
 
-function addCat(){
+async function addCat(){
   const name=document.getElementById('new-cat-name').value.trim();
   if(!name){toast('請輸入名稱');return;}
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   book.cats[subMgrType].push({id:'c'+Date.now(),e:pickedEmoji,n:name,subs:[]});
   DB.saveBooks(books); document.getElementById('new-cat-name').value='';
   pickedEmoji='📦'; document.getElementById('cat-emoji-btn').textContent='📦';
-  renderCatMgrList(); fillMainCats(); updateCatCounts(); toast('已新增');
+  renderCatMgrList(); fillMainCats(); updateCatCounts();
+  await syncBooksToCloud();
+  toast('已新增');
 }
 
-function deleteCat(id){
+async function deleteCat(id){
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   book.cats[subMgrType]=book.cats[subMgrType].filter(c=>c.id!==id);
-  DB.saveBooks(books); renderCatMgrList(); fillMainCats(); updateCatCounts(); toast('已刪除');
+  DB.saveBooks(books); renderCatMgrList(); fillMainCats(); updateCatCounts();
+  await syncBooksToCloud();
+  toast('已刪除');
 }
 
 function openSubMgr(catId){
@@ -1399,19 +1418,23 @@ function renderSubMgrList(){
     </div>`).join('')||'<p style="font-size:.8rem;color:var(--text3);padding:.35rem 0;">尚無子分類</p>';
 }
 
-function addSub(){
+async function addSub(){
   const name=document.getElementById('new-sub-name').value.trim();if(!name){toast('請輸入名稱');return;}
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   const cat=book.cats[subMgrType].find(c=>c.id===subMgrCatId);
   if(!cat.subs)cat.subs=[];cat.subs.push(name);
   DB.saveBooks(books); document.getElementById('new-sub-name').value='';
-  renderSubMgrList(); updateSubCats(); toast('已新增');
+  renderSubMgrList(); updateSubCats();
+  await syncBooksToCloud();
+  toast('已新增');
 }
 
-function deleteSub(idx){
+async function deleteSub(idx){
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   book.cats[subMgrType].find(c=>c.id===subMgrCatId).subs.splice(idx,1);
-  DB.saveBooks(books); renderSubMgrList(); updateSubCats(); toast('已刪除');
+  DB.saveBooks(books); renderSubMgrList(); updateSubCats();
+  await syncBooksToCloud();
+  toast('已刪除');
 }
 
 function updateCatCounts(){
