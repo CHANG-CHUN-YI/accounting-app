@@ -374,6 +374,20 @@ select,input{font-family:inherit;}
     <div class="bpct" id="total-bpct"></div>
   </div>
   <div class="sec-title">分類預算</div>
+  <!-- 分類預算分配總覽 -->
+  <div id="cat-budget-summary" style="background:var(--bg3);border-radius:12px;padding:.9rem 1rem;margin-bottom:.8rem;border:1.5px solid var(--border);display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+      <div style="font-size:.8rem;font-weight:600;color:var(--text2);">分類預算分配</div>
+      <div style="font-size:.75rem;color:var(--text3);" id="cat-alloc-pct"></div>
+    </div>
+    <div style="height:7px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-bottom:.5rem;">
+      <div id="cat-alloc-bar" style="height:100%;border-radius:99px;transition:width .3s;background:var(--blue-d);"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:.77rem;">
+      <span style="color:var(--text2);">已分配 <b id="cat-alloc-amt" style="color:var(--blue-d);"></b></span>
+      <span id="cat-alloc-remain" style="font-weight:600;"></span>
+    </div>
+  </div>
   <div id="cat-blist"></div>
   <div class="sec-title" style="margin-top:1.3rem;">固定收支</div>
   <div id="recur-list"></div>
@@ -2001,6 +2015,32 @@ function renderBudget(){
     document.getElementById('total-bpct').textContent=`已用 NT$${fmt(totalSpent)} / NT$${fmt(tb)}（${pct}%）`;
   }else{document.getElementById('total-bbar').style.width='0%';document.getElementById('total-bpct').textContent='';}
   const catCfg=cfg.cats||{};
+  // 計算所有分類預算總和
+  const totalAllocated = Object.values(catCfg).reduce((s,v)=>s+Number(v||0),0);
+
+  // 更新分配總覽
+  const summaryEl = document.getElementById('cat-budget-summary');
+  if(tb && summaryEl){
+    summaryEl.style.display='block';
+    const remain = tb - totalAllocated;
+    const allocPct = Math.min(Math.round(totalAllocated/tb*100),100);
+    const isOver = totalAllocated > tb;
+    document.getElementById('cat-alloc-bar').style.width = allocPct+'%';
+    document.getElementById('cat-alloc-bar').style.background = isOver ? '#b07a74' : allocPct>=90 ? 'var(--amber-d)' : 'var(--blue-d)';
+    document.getElementById('cat-alloc-amt').textContent = `NT$${fmt(totalAllocated)}`;
+    document.getElementById('cat-alloc-pct').textContent = `${allocPct}%`;
+    const remainEl = document.getElementById('cat-alloc-remain');
+    if(isOver){
+      remainEl.textContent = `⚠️ 超出 NT$${fmt(-remain)}`;
+      remainEl.style.color = '#b07a74';
+    } else {
+      remainEl.textContent = `剩餘可分配 NT$${fmt(remain)}`;
+      remainEl.style.color = remain < tb*0.1 ? 'var(--amber-d)' : 'var(--green-d)';
+    }
+  } else if(summaryEl){
+    summaryEl.style.display='none';
+  }
+
   document.getElementById('cat-blist').innerHTML=getCats('expense').map(cat=>{
     const spent=monthExp.filter(t=>t.catId===cat.id).reduce((s,t)=>s+Number(t.amount),0);
     const budget=catCfg[cat.id]||0;
@@ -2012,12 +2052,39 @@ function renderBudget(){
       </div>
       ${budget?`<div class="bbar-wrap"><div class="bbar${pct>=80?' warn':''}" style="width:${pct}%"></div></div>`:''}
       <div class="bitem-row">
-        <input class="b-input" type="number" placeholder="設定預算" value="${budget||''}" id="cb-${cat.id}" inputmode="decimal">
+        <input class="b-input" type="number" placeholder="設定預算" value="${budget||''}" id="cb-${cat.id}"
+          inputmode="decimal" oninput="previewCatBudget('${cat.id}',this.value)">
         <button class="bsave" onclick="saveCatBudget('${cat.id}')">儲存</button>
       </div>
     </div>`;
   }).join('');
   renderRecurList();
+}
+
+// 輸入分類預算時即時預覽分配總覽
+function previewCatBudget(catId, val){
+  const book=getBook();
+  const catCfg=(book.budgets||{}).cats||{};
+  const tb=(book.budgets||{}).total||0;
+  if(!tb) return;
+  // 用當前輸入值預覽
+  const preview={...catCfg, [catId]: parseFloat(val)||0};
+  const totalAllocated=Object.values(preview).reduce((s,v)=>s+Number(v||0),0);
+  const remain=tb-totalAllocated;
+  const allocPct=Math.min(Math.round(totalAllocated/tb*100),100);
+  const isOver=totalAllocated>tb;
+  document.getElementById('cat-alloc-bar').style.width=allocPct+'%';
+  document.getElementById('cat-alloc-bar').style.background=isOver?'#b07a74':allocPct>=90?'var(--amber-d)':'var(--blue-d)';
+  document.getElementById('cat-alloc-amt').textContent=`NT$${fmt(totalAllocated)}`;
+  document.getElementById('cat-alloc-pct').textContent=`${allocPct}%`;
+  const remainEl=document.getElementById('cat-alloc-remain');
+  if(isOver){
+    remainEl.textContent=`⚠️ 超出 NT$${fmt(-remain)}`;
+    remainEl.style.color='#b07a74';
+  } else {
+    remainEl.textContent=`剩餘可分配 NT$${fmt(remain)}`;
+    remainEl.style.color=remain<tb*0.1?'var(--amber-d)':'var(--green-d)';
+  }
 }
 
 async function saveTotalBudget(){
