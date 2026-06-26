@@ -1484,9 +1484,13 @@ async function addCat(){
 }
 
 async function deleteCat(id){
-  const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
-  book.cats[subMgrType]=book.cats[subMgrType].filter(c=>c.id!==id);
-  DB.saveBooks(books); renderCatMgrList(); fillMainCats(); updateCatCounts();
+  // 清掉這個分類的預算設定，並從帳本移除
+  const books=DB.getBooks(), bookRef=books.find(b=>b.id===curBook);
+  if(bookRef.budgets&&bookRef.budgets.cats) delete bookRef.budgets.cats[id];
+  bookRef.cats[subMgrType]=bookRef.cats[subMgrType].filter(c=>c.id!==id);
+  DB.saveBooks(books);
+  await savePersonalBudget(bookRef.budgets||{});
+  renderCatMgrList(); fillMainCats(); updateCatCounts();
   await syncBooksToCloud();
   toast('已刪除');
 }
@@ -2015,8 +2019,11 @@ function renderBudget(){
     document.getElementById('total-bpct').textContent=`已用 NT$${fmt(totalSpent)} / NT$${fmt(tb)}（${pct}%）`;
   }else{document.getElementById('total-bbar').style.width='0%';document.getElementById('total-bpct').textContent='';}
   const catCfg=cfg.cats||{};
-  // 計算所有分類預算總和
-  const totalAllocated = Object.values(catCfg).reduce((s,v)=>s+Number(v||0),0);
+  // 只計算目前存在的分類預算（排除已刪除的分類）
+  const existCatIds = new Set(getCats('expense').map(c=>c.id));
+  const totalAllocated = Object.entries(catCfg)
+    .filter(([id])=>existCatIds.has(id))
+    .reduce((s,[,v])=>s+Number(v||0),0);
 
   // 更新分配總覽
   const summaryEl = document.getElementById('cat-budget-summary');
@@ -2068,8 +2075,11 @@ function previewCatBudget(catId, val){
   const tb=(book.budgets||{}).total||0;
   if(!tb) return;
   // 用當前輸入值預覽
+  const existIds = new Set(getCats('expense').map(c=>c.id));
   const preview={...catCfg, [catId]: parseFloat(val)||0};
-  const totalAllocated=Object.values(preview).reduce((s,v)=>s+Number(v||0),0);
+  const totalAllocated=Object.entries(preview)
+    .filter(([id])=>existIds.has(id))
+    .reduce((s,[,v])=>s+Number(v||0),0);
   const remain=tb-totalAllocated;
   const allocPct=Math.min(Math.round(totalAllocated/tb*100),100);
   const isOver=totalAllocated>tb;
