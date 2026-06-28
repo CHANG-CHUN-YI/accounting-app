@@ -451,7 +451,7 @@ select,input{font-family:inherit;}
       💳 <b>分期付款</b>：貸款、信用卡分期、車貸等，追蹤每期還款進度。
     </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:.7rem;">
-      <button onclick="openMo('mo-add-inst')" style="background:var(--blue-d);color:#fff;padding:7px 14px;border-radius:10px;font-size:.81rem;font-weight:500;">＋ 新增分期</button>
+      <button onclick="openAddInst()" style="background:var(--blue-d);color:#fff;padding:7px 14px;border-radius:10px;font-size:.81rem;font-weight:500;">＋ 新增分期</button>
     </div>
     <div id="inst-list"></div>
   </div>
@@ -1319,10 +1319,12 @@ function switchWealthTab(tab){
   ['goals','assets','inst'].forEach(t=>{
     const panel=document.getElementById('wealth-'+t);
     const btn=document.getElementById('wtab-'+t);
-    if(panel) panel.style.display=t===tab?'block':'none';
+    if(panel) panel.style.display=t===tab?'':'none';
     if(btn) btn.classList.toggle('active',t===tab);
   });
-  if(tab==='inst') renderInsts();
+  if(tab==='inst') setTimeout(()=>renderInsts(),50);
+  if(tab==='goals') renderGoals();
+  if(tab==='assets') renderAssets();
 }
 
 // 開啟新增分期（重設表單）
@@ -1341,7 +1343,7 @@ function openAddInst(){
   // 填入分類選單
   const sel=document.getElementById('inst-cat-sel');
   sel.innerHTML=getCats('expense').map(c=>`<option value="${c.id}">${c.e} ${c.n}</option>`).join('');
-  openMo('mo-add-inst');
+  document.getElementById('mo-add-inst').classList.add('open');
 }
 
 // 開啟編輯分期
@@ -1362,7 +1364,7 @@ function openEditInst(id){
   const sel=document.getElementById('inst-cat-sel');
   sel.innerHTML=getCats('expense').map(c=>`<option value="${c.id}">${c.e} ${c.n}</option>`).join('');
   sel.value=inst.catId||'other';
-  openMo('mo-add-inst');
+  document.getElementById('mo-add-inst').classList.add('open');
 }
 
 async function submitInst(){
@@ -3273,7 +3275,7 @@ function openMo(id){
   if(id==='mo-book-mgr')renderBookListMd();
   if(id==='mo-add-recur')fillRecurCats();
   if(id==='mo-user')refreshBackupTime();
-  if(id==='mo-add-inst') openAddInst();
+  // mo-add-inst 由 openAddInst() 直接處理
   if(id==='mo-add-goal'){
     // 重設為新增模式（若不是由 openEditGoal 觸發）
     const editId=document.getElementById('goal-edit-id');
