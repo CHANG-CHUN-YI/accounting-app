@@ -2326,7 +2326,11 @@ function renderBudget(){
   const recurExpense = DB.getRecurs()
     .filter(r=>r.bookId===curBook&&r.type==='expense')
     .reduce((s,r)=>s+Number(r.amount||0),0);
-  const totalAllocated = catAllocated + recurExpense;
+  // 進行中的分期付款每月金額也計入
+  const instExpense = DB.getInsts()
+    .filter(i=>i.bookId===curBook&&i.status==='active')
+    .reduce((s,i)=>s+Number(i.perAmount||0),0);
+  const totalAllocated = catAllocated + recurExpense + instExpense;
 
   // 更新分配總覽
   const summaryEl = document.getElementById('cat-budget-summary');
@@ -2337,7 +2341,11 @@ function renderBudget(){
     const isOver = totalAllocated > tb;
     document.getElementById('cat-alloc-bar').style.width = allocPct+'%';
     document.getElementById('cat-alloc-bar').style.background = isOver ? '#b07a74' : allocPct>=90 ? 'var(--amber-d)' : 'var(--blue-d)';
-    document.getElementById('cat-alloc-amt').textContent = `NT$${fmt(totalAllocated)}（含固定支出 NT$${fmt(recurExpense)}）`;
+    const detailParts = [];
+    if(recurExpense>0) detailParts.push(`固定 NT$${fmt(recurExpense)}`);
+    if(instExpense>0) detailParts.push(`分期 NT$${fmt(instExpense)}`);
+    const detailStr = detailParts.length ? `（含${detailParts.join('、')}）` : '';
+    document.getElementById('cat-alloc-amt').textContent = `NT$${fmt(totalAllocated)}${detailStr}`;
     document.getElementById('cat-alloc-pct').textContent = `${allocPct}%`;
     const remainEl = document.getElementById('cat-alloc-remain');
     if(isOver){
@@ -2386,13 +2394,20 @@ function previewCatBudget(catId, val){
   const recurExp=DB.getRecurs()
     .filter(r=>r.bookId===curBook&&r.type==='expense')
     .reduce((s,r)=>s+Number(r.amount||0),0);
-  const totalAllocated=catAlloc+recurExp;
+  const instExp=DB.getInsts()
+    .filter(i=>i.bookId===curBook&&i.status==='active')
+    .reduce((s,i)=>s+Number(i.perAmount||0),0);
+  const totalAllocated=catAlloc+recurExp+instExp;
   const remain=tb-totalAllocated;
   const allocPct=Math.min(Math.round(totalAllocated/tb*100),100);
   const isOver=totalAllocated>tb;
   document.getElementById('cat-alloc-bar').style.width=allocPct+'%';
   document.getElementById('cat-alloc-bar').style.background=isOver?'#b07a74':allocPct>=90?'var(--amber-d)':'var(--blue-d)';
-  document.getElementById('cat-alloc-amt').textContent=`NT$${fmt(totalAllocated)}（含固定 NT$${fmt(recurExp)}）`;
+  const pParts=[];
+  if(recurExp>0) pParts.push(`固定 NT$${fmt(recurExp)}`);
+  if(instExp>0) pParts.push(`分期 NT$${fmt(instExp)}`);
+  const pDetail=pParts.length?`（含${pParts.join('、')}）`:'';
+  document.getElementById('cat-alloc-amt').textContent=`NT$${fmt(totalAllocated)}${pDetail}`;
   document.getElementById('cat-alloc-pct').textContent=`${allocPct}%`;
   const remainEl=document.getElementById('cat-alloc-remain');
   if(isOver){
