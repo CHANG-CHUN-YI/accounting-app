@@ -2478,14 +2478,6 @@ function applyRecurs(){
 // ══════════════════════════════════════════
 // WEALTH PAGE
 // ══════════════════════════════════════════
-function switchWealthTab(tab){
-  curWealthTab=tab;
-  document.getElementById('wtab-goals').classList.toggle('active',tab==='goals');
-  document.getElementById('wtab-assets').classList.toggle('active',tab==='assets');
-  document.getElementById('wealth-goals').style.display=tab==='goals'?'block':'none';
-  document.getElementById('wealth-assets').style.display=tab==='assets'?'block':'none';
-}
-
 function renderWealth(){
   renderGoals(); renderAssets(); updateTotalAssets(); renderInsts();
 }
