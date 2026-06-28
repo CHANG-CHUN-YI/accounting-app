@@ -1319,10 +1319,10 @@ function switchWealthTab(tab){
   ['goals','assets','inst'].forEach(t=>{
     const panel=document.getElementById('wealth-'+t);
     const btn=document.getElementById('wtab-'+t);
-    if(panel) panel.style.display=t===tab?'':'none';
+    if(panel) panel.style.display=t===tab?'block':'none';
     if(btn) btn.classList.toggle('active',t===tab);
   });
-  if(tab==='inst') setTimeout(()=>renderInsts(),50);
+  if(tab==='inst'){ renderInsts(); }
   if(tab==='goals') renderGoals();
   if(tab==='assets') renderAssets();
 }
@@ -1437,9 +1437,10 @@ async function deleteInst(id){
 }
 
 function renderInsts(){
-  const insts=DB.getInsts().filter(i=>i.bookId===curBook);
   const el=document.getElementById('inst-list');
-  if(!el) return;
+  if(!el){ console.warn('inst-list not found'); return; }
+  const insts=DB.getInsts().filter(i=>i.bookId===curBook);
+  console.log('renderInsts:', insts.length, 'items, curBook:', curBook);
   if(!insts.length){
     el.innerHTML='<div style="text-align:center;padding:2rem;color:var(--text3);font-size:.85rem;">尚無分期付款記錄<br>點右上角「＋ 新增分期」開始追蹤</div>';
     return;
