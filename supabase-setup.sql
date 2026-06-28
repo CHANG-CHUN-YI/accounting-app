@@ -295,3 +295,34 @@ create policy "asset txs access" on asset_txs
       )
     )
   );
+
+-- ════════════════════════════════════════
+-- 分期付款資料表
+-- 在 Supabase SQL Editor 貼上執行
+-- ════════════════════════════════════════
+
+create table if not exists installments (
+  id            text primary key,
+  user_id       uuid references auth.users(id) on delete cascade not null,
+  book_id       text not null default 'b1',
+  name          text not null,              -- 名稱（如：iPhone 16）
+  emoji         text default '💳',
+  total_amount  numeric not null,           -- 總金額
+  per_amount    numeric not null,           -- 每期金額
+  total_periods integer not null,           -- 總期數
+  paid_periods  integer not null default 0, -- 已付期數
+  start_date    date not null,              -- 開始日期
+  cat_id        text default 'other',       -- 支出分類
+  note          text default '',            -- 備註
+  status        text default 'active'       -- active / done
+    check (status in ('active','done')),
+  created_at    timestamptz default now()
+);
+
+alter table installments enable row level security;
+
+create policy "own installments" on installments
+  for all using (auth.uid() = user_id);
+
+create index if not exists idx_installments_user
+  on installments(user_id, status);
