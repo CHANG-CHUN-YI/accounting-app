@@ -2329,10 +2329,10 @@ function renderCatStats(tx){
 // ── budget ──
 function renderBudget(){
   const now=new Date();
-  // 預算只算日常（無目標、非分期付款）的支出
-  // 分期付款透過 instId 欄位或 note 前綴 [分期] 雙重辨識，排除在外
-  const isInstPayment=t=>!!(t.instId||(t.note||'').startsWith('[分期] '));
-  const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId&&!isInstPayment(t));
+  // 預算只算日常（無目標、非分期付款、非固定收支自動記帳）的支出
+  // 分期付款和固定收支都已在分配總覽各自獨立計入，排除在外避免重複計算
+  const isAutoTx=t=>!!(t.instId||(t.note||'').startsWith('[分期] ')||(t.note||'').startsWith('[固定] '));
+  const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId&&!isAutoTx(t));
   const totalSpent=monthExp.reduce((s,t)=>s+Number(t.amount),0);
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   const cfg=book.budgets||{};const tb=cfg.total||0;
