@@ -22,8 +22,10 @@ function renderBudget(){
   // 預算只算日常（無目標、非分期付款、非固定收支自動記帳）的支出
   // 分期付款和固定收支都已在分配總覽各自獨立計入，排除在外避免重複計算
   const isAutoTx=t=>!!(t.instId||(t.note||'').startsWith('[分期] ')||(t.note||'').startsWith('[固定] '));
+  // monthExp：排除自動記帳，供分類明細列表使用（避免雙重計算）
   const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId&&!isAutoTx(t));
-  const totalSpent=monthExp.reduce((s,t)=>s+Number(t.amount),0);
+  // totalSpent：包含固定＋分期的實際總花費，供頂部「已用」進度條使用
+  const totalSpent=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId).reduce((s,t)=>s+Number(t.amount),0);
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   const cfg=book.budgets||{};const tb=cfg.total||0;
   document.getElementById('total-b-display').textContent=tb?`NT$ ${fmt(tb)}`:'未設定';
