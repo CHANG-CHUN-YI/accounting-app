@@ -402,6 +402,8 @@ select,input{font-family:inherit;}
     </div>
   </div>
   <div id="cat-blist"></div>
+  <div class="sec-title" style="margin-top:1.3rem;" id="inst-budget-title">分期付款（進行中）</div>
+  <div id="inst-budget-list"></div>
   <div class="sec-title" style="margin-top:1.3rem;">固定收支</div>
   <div id="recur-list"></div>
   <button onclick="openMo('mo-add-recur')" style="width:100%;padding:10px;border-radius:12px;border:1.5px dashed var(--border);color:var(--text2);font-size:.83rem;margin-top:7px;display:flex;align-items:center;justify-content:center;gap:5px;">＋ 新增固定收支</button>
@@ -849,7 +851,7 @@ const DB={
     if(!isCloud()){ const t=DB.getTxs(); t.unshift(tx); DB.saveTxs(t); return; }
     const row={id:tx.id,user_id:_user.id,book_id:tx.bookId||'personal',type:tx.type,
       amount:tx.amount,cat_id:tx.catId||'other',sub_cat:tx.subCat||'',
-      note:tx.note||'',date:tx.date,who:tx.who||'',goal_id:tx.goalId||''};
+      note:tx.note||'',date:tx.date,who:tx.who||'',goal_id:tx.goalId||'',inst_id:tx.instId||''};
     const {error}=await _sb.from('transactions').insert(row);
     if(error) console.error('insert tx',error);
     const t=DB.getTxs(); t.unshift(tx); DB.saveTxs(t);
@@ -872,7 +874,7 @@ const DB={
       const txs=data.map(r=>({
         id:r.id, bookId:r.book_id||'personal', type:r.type, amount:r.amount,
         catId:r.cat_id||'other', subCat:r.sub_cat||'', note:r.note||'',
-        date:r.date, who:r.who||'', goalId:r.goal_id||'',
+        date:r.date, who:r.who||'', goalId:r.goal_id||'', instId:r.inst_id||'',
       }));
       DB.saveTxs(txs);
     }
@@ -925,7 +927,7 @@ const DB={
       id:r.id, bookId:r.book_id, type:r.type, amount:r.amount,
       catId:r.cat_id||'other', subCat:r.sub_cat||'',
       note:r.note||'', date:r.date, who:r.who_name||'',
-      goalId:r.goal_id||'',
+      goalId:r.goal_id||'', instId:r.inst_id||'',
     }));
   },
 
@@ -939,7 +941,7 @@ const DB={
       id:uniqueId, book_id:bookId, user_id:_user.id, who_name:whoName,
       type:tx.type, amount:tx.amount,
       cat_id:tx.catId||'other', sub_cat:tx.subCat||'',
-      note:tx.note||'', date:tx.date, goal_id:tx.goalId||''
+      note:tx.note||'', date:tx.date, goal_id:tx.goalId||'', inst_id:tx.instId||''
     };
     const {error}=await _sb.from('shared_transactions').insert(row);
     if(error) console.error('insert shared tx',error);
@@ -961,6 +963,7 @@ const DB={
     if(updates.date!==undefined) row.date=updates.date;
     if(updates.who!==undefined) row.who=updates.who;
     if(updates.goalId!==undefined) row.goal_id=updates.goalId;
+    if(updates.instId!==undefined) row.inst_id=updates.instId;
     const {error}=await _sb.from('transactions').update(row).eq('id',id).eq('user_id',_user.id);
   },
 
@@ -975,6 +978,7 @@ const DB={
     if(updates.date!==undefined) row.date=updates.date;
     if(updates.who!==undefined) row.who_name=updates.who;
     if(updates.goalId!==undefined) row.goal_id=updates.goalId;
+    if(updates.instId!==undefined) row.inst_id=updates.instId;
     const {error}=await _sb.from('shared_transactions').update(row).eq('id',id);
     if(error) console.error('updateSharedTx',error);
   },
@@ -1422,7 +1426,7 @@ async function payInstPeriod(id){
     type:'expense', amount:inst.perAmount,
     catId:inst.catId||'other', subCat:'',
     note:`${inst.name} 第${inst.paidPeriods}期`,
-    date:today(), who:'', goalId:'',
+    date:today(), who:'', goalId:'', instId:inst.id,
   });
   renderInsts();
   toast(`✓ 已付第 ${inst.paidPeriods} 期，剩 ${inst.totalPeriods-inst.paidPeriods} 期`);
@@ -1883,7 +1887,7 @@ function renderWhoList(){
 function confirmWho(who){ closeMo('mo-who'); if(pendingTx){saveTx({...pendingTx,who});pendingTx=null;} }
 
 async function saveTx(d){
-  const tx={id:Date.now()+'_'+Math.random().toString(36).slice(2,6),bookId:curBook,type:d.type,amount:d.amount,catId:d.catId,subCat:d.subCat||'',note:d.note||'',date:d.date,who:d.who||'',goalId:d.goalId||''};
+  const tx={id:Date.now()+'_'+Math.random().toString(36).slice(2,6),bookId:curBook,type:d.type,amount:d.amount,catId:d.catId,subCat:d.subCat||'',note:d.note||'',date:d.date,who:d.who||'',goalId:d.goalId||'',instId:d.instId||''};
   const book=getBook();
   if(book?.type==='shared'&&isCloud()){
     await DB.insertSharedTx(tx, curBook, d.who||'');
@@ -2054,6 +2058,19 @@ async function deleteTx(id){
         }
       }
       DB.saveGoals(goals);
+    }
+  }
+
+  // 如果這筆是分期付款自動記錄的支出，同步把該分期的已付期數退回一期
+  if(tx?.instId){
+    const insts=DB.getInsts();
+    const inst=insts.find(i=>i.id===tx.instId);
+    if(inst && inst.paidPeriods>0){
+      inst.paidPeriods--;
+      if(inst.status==='done' && inst.paidPeriods<inst.totalPeriods) inst.status='active';
+      DB.saveInsts(insts);
+      await DB.upsertInstallment(inst);
+      renderInsts();
     }
   }
 
@@ -2303,8 +2320,9 @@ function renderCatStats(tx){
 // ── budget ──
 function renderBudget(){
   const now=new Date();
-  // 預算只算日常（無目標）的支出
-  const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId);
+  // 預算只算日常（無目標、非分期付款）的支出
+  // 分期付款已在「分期 NT$X」欄位獨立計入分配總覽，不重複計算
+  const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId&&!t.instId);
   const totalSpent=monthExp.reduce((s,t)=>s+Number(t.amount),0);
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   const cfg=book.budgets||{};const tb=cfg.total||0;
@@ -2376,7 +2394,34 @@ function renderBudget(){
       </div>
     </div>`;
   }).join('');
+  renderInstBudgetList();
   renderRecurList();
+}
+
+function renderInstBudgetList(){
+  const insts=DB.getInsts().filter(i=>i.bookId===curBook&&i.status==='active');
+  const el=document.getElementById('inst-budget-list');
+  const titleEl=document.getElementById('inst-budget-title');
+  if(!el) return;
+  if(!insts.length){
+    if(titleEl) titleEl.style.display='none';
+    el.style.display='none';
+    return;
+  }
+  if(titleEl) titleEl.style.display='';
+  el.style.display='';
+  el.innerHTML=insts.map(inst=>{
+    const nextDate=getNextPayDate(inst);
+    const cat=getCats('expense').find(c=>c.id===inst.catId)||{e:'📦',n:'其他'};
+    return `<div style="display:flex;align-items:center;gap:10px;background:var(--bg3);border-radius:10px;padding:.8rem;margin-bottom:6px;box-shadow:var(--shadow);">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(168,155,191,.2);display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0;">${inst.e||'💳'}</div>
+      <div style="flex:1;">
+        <div style="font-size:.86rem;font-weight:500;">${esc(inst.name)}</div>
+        <div style="font-size:.71rem;color:var(--text3);margin-top:1px;">下期 ${nextDate}・${cat.e} ${esc(cat.n)}・${inst.paidPeriods}/${inst.totalPeriods} 期</div>
+      </div>
+      <div style="font-weight:600;font-size:.9rem;color:#b07a74;flex-shrink:0;">-${fmt(inst.perAmount)}</div>
+    </div>`;
+  }).join('');
 }
 
 // 輸入分類預算時即時預覽分配總覽
@@ -3298,7 +3343,7 @@ function bgClose(e,id){ if(e.target.id===id)closeMo(id); }
 let _tt;
 function toast(msg){ const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),2200); }
 
-function today(){ return new Date().toISOString().split('T')[0]; }
+function today(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 function fmt(n){ return Math.round(Number(n)).toLocaleString('zh-TW'); }
 function pad(n){ return String(n).padStart(2,'0'); }
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
