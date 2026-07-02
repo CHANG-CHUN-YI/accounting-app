@@ -1425,7 +1425,7 @@ async function payInstPeriod(id){
   await saveTx({
     type:'expense', amount:inst.perAmount,
     catId:inst.catId||'other', subCat:'',
-    note:`${inst.name} 第${inst.paidPeriods}期`,
+    note:`[分期] ${inst.name} 第${inst.paidPeriods}期`,
     date:today(), who:'', goalId:'', instId:inst.id,
   });
   renderInsts();
@@ -2062,9 +2062,18 @@ async function deleteTx(id){
   }
 
   // 如果這筆是分期付款自動記錄的支出，同步把該分期的已付期數退回一期
-  if(tx?.instId){
+  // 雙重辨識：instId 欄位（新）或 note 前綴 [分期]（舊 / 雲端 instId 被覆蓋時的備援）
+  const isInstPayment=!!(tx?.instId||(tx?.note||'').startsWith('[分期] '));
+  if(isInstPayment){
     const insts=DB.getInsts();
-    const inst=insts.find(i=>i.id===tx.instId);
+    let inst=tx?.instId ? insts.find(i=>i.id===tx.instId) : null;
+    if(!inst && (tx?.note||'').startsWith('[分期] ')){
+      const noteName=(tx.note||'').replace(/^\[分期\] /,'').replace(/ 第\d+期$/,'');
+      inst=insts.find(i=>
+        i.bookId===curBook && i.name===noteName && i.paidPeriods>0 &&
+        Math.abs(Number(i.perAmount)-Number(tx.amount))<0.01
+      );
+    }
     if(inst && inst.paidPeriods>0){
       inst.paidPeriods--;
       if(inst.status==='done' && inst.paidPeriods<inst.totalPeriods) inst.status='active';
@@ -2321,8 +2330,9 @@ function renderCatStats(tx){
 function renderBudget(){
   const now=new Date();
   // 預算只算日常（無目標、非分期付款）的支出
-  // 分期付款已在「分期 NT$X」欄位獨立計入分配總覽，不重複計算
-  const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId&&!t.instId);
+  // 分期付款透過 instId 欄位或 note 前綴 [分期] 雙重辨識，排除在外
+  const isInstPayment=t=>!!(t.instId||(t.note||'').startsWith('[分期] '));
+  const monthExp=getBookTxs().filter(t=>sameMonth(t.date,now)&&t.type==='expense'&&!t.goalId&&!isInstPayment(t));
   const totalSpent=monthExp.reduce((s,t)=>s+Number(t.amount),0);
   const books=DB.getBooks(),book=books.find(b=>b.id===curBook);
   const cfg=book.budgets||{};const tb=cfg.total||0;
