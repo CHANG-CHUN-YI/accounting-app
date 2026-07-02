@@ -266,4 +266,3 @@ async function deleteTx(id){
   if(document.getElementById('page-wealth').classList.contains('active'))renderWealth();
   toast('已刪除');
 }
-
