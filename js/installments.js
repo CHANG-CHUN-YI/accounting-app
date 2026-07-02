@@ -222,4 +222,3 @@ async function loadInstsFromCloud(){
   if(!data) return;
   DB.saveInsts(data);
 }
-
