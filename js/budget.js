@@ -243,4 +243,3 @@ function applyRecurs(){
   });
   localStorage.setItem(key,'1');
 }
-
