@@ -724,17 +724,32 @@ select,input{font-family:inherit;}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
     <div>
       <label class="ml">總金額（NT$）</label>
-      <input class="mi" type="number" id="inst-total-amt" placeholder="例：36000" inputmode="decimal" oninput="instCalcPer()">
+      <input class="mi" type="number" id="inst-total-amt" placeholder="例：36000" inputmode="decimal" oninput="instRefresh()">
     </div>
     <div>
       <label class="ml">總期數</label>
-      <input class="mi" type="number" id="inst-total-p" placeholder="例：12" inputmode="numeric" min="1" oninput="instCalcPer()">
+      <input class="mi" type="number" id="inst-total-p" placeholder="例：12" inputmode="numeric" min="1" oninput="instRefresh()">
     </div>
   </div>
   <label class="ml">每期金額（NT$）<span style="color:var(--text3);font-size:.75rem;"> 可自行調整</span></label>
-  <input class="mi" type="number" id="inst-per-amt" placeholder="自動計算，亦可直接輸入" inputmode="decimal" oninput="instCalcTotal()">
-  <label class="ml">已付期數（已還幾期）</label>
-  <input class="mi" type="number" id="inst-paid-p" placeholder="0" value="0" inputmode="numeric" min="0">
+  <input class="mi" type="number" id="inst-per-amt" placeholder="自動計算，亦可直接輸入" inputmode="decimal" oninput="instCalcTotal();instUpdateSummary()">
+  <label class="ml">已付期數</label>
+  <input class="mi" type="number" id="inst-paid-p" placeholder="0" value="0" inputmode="numeric" min="0" oninput="instRefresh()">
+  <!-- 即時摘要：已付金額 / 剩餘應付 / 剩餘期數 -->
+  <div id="inst-form-summary" style="display:none;background:var(--bg2);border-radius:10px;padding:.85rem 1rem;margin:.3rem 0;font-size:.83rem;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+      <span style="color:var(--text2);">已付金額</span>
+      <span id="inst-disp-paid" style="font-weight:600;"></span>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+      <span style="color:var(--text2);">剩餘應付</span>
+      <span id="inst-disp-remaining" style="font-weight:600;color:var(--blue-d);"></span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text2);">剩餘期數</span>
+      <span id="inst-disp-periods" style="font-weight:600;"></span>
+    </div>
+  </div>
   <label class="ml">開始日期</label>
   <input class="mi" type="date" id="inst-start-date">
   <label class="ml">分類</label>
