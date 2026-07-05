@@ -37,6 +37,8 @@ function openAddInst(){
   document.getElementById('inst-per-amt').value='';
   document.getElementById('inst-total-p').value='';
   document.getElementById('inst-total-amt').value='';
+  const s=document.getElementById('inst-form-summary');
+  if(s) s.style.display='none';
   document.getElementById('inst-paid-p').value='0';
   document.getElementById('inst-start-date').value=today();
   document.getElementById('inst-note-inp').value='';
@@ -72,52 +74,85 @@ function openEditInst(id){
   sel.innerHTML=getCats('expense').map(c=>`<option value="${c.id}">${c.e} ${c.n}</option>`).join('');
   sel.value=inst.catId||'other';
   document.getElementById('mo-add-inst').classList.add('open');
+  // 開啟後立即更新摘要，讓使用者看到目前的已付/剩餘金額
+  instUpdateSummary();
 }
 
 
-// 總金額或期數變動時，自動推算每期金額
-// 直接從 DB 查詢實際已付金額，不依賴隱藏欄位（隱藏欄位若不存在會靜靜拋錯）
+// ── 共用 helper：計算實際已付金額 ──────────────────────────
+// 優先從交易記錄加總，找不到才用「每期金額 × 已付期數」估算
+function instGetActualPaid(){
+  const paid=parseInt((document.getElementById('inst-paid-p')||{}).value)||0;
+  if(!paid) return 0;
+  const editId=(document.getElementById('inst-edit-id')||{}).value||'';
+  if(editId){
+    const inst=DB.getInsts().find(i=>i.id===editId);
+    if(inst){
+      const nameRe=new RegExp(`^\\[分期\\] ${inst.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} 第\\d+期$`);
+      const txPaid=getBookTxs()
+        .filter(t=>t.type==='expense'&&(t.instId===editId||(!t.instId&&nameRe.test(t.note||''))))
+        .reduce((s,t)=>s+Number(t.amount),0);
+      if(txPaid>0) return txPaid;
+    }
+  }
+  // 退回估算
+  const perEl=document.getElementById('inst-per-amt');
+  return (parseFloat(perEl?perEl.value:0)||0)*paid;
+}
+
+
+// ── 總金額 / 期數 / 已付期數 變動時，重算每期金額 ────────────
 function instCalcPer(){
   const totalEl=document.getElementById('inst-total-amt');
   const periodEl=document.getElementById('inst-total-p');
   const paidEl=document.getElementById('inst-paid-p');
   const perEl=document.getElementById('inst-per-amt');
   if(!totalEl||!periodEl||!paidEl||!perEl) return;
-
   const total=parseFloat(totalEl.value);
   const periods=parseInt(periodEl.value);
   const paid=parseInt(paidEl.value)||0;
   const remaining=periods-paid;
   if(!total||!periods||remaining<=0) return;
-
-  if(paid>0){
-    // 從 DB 查詢實際已付金額（最精準）
-    const editId=(document.getElementById('inst-edit-id')||{}).value||'';
-    let alreadyPaid=0;
-    if(editId){
-      const inst=DB.getInsts().find(i=>i.id===editId);
-      if(inst){
-        const nameRe=new RegExp(`^\\[分期\\] ${inst.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} 第\\d+期$`);
-        alreadyPaid=getBookTxs()
-          .filter(t=>t.type==='expense'&&(t.instId===editId||(!t.instId&&nameRe.test(t.note||''))))
-          .reduce((s,t)=>s+Number(t.amount),0);
-      }
-    }
-    // 找不到交易記錄時，用目前每期金額×期數估算
-    if(!alreadyPaid) alreadyPaid=(parseFloat(perEl.value)||0)*paid;
-    const remainingAmt=Math.max(total-alreadyPaid,0);
-    perEl.value=Math.round(remainingAmt/remaining);
-  } else {
-    perEl.value=Math.round(total/periods);
-  }
+  const alreadyPaid=instGetActualPaid();
+  const remainingAmt=Math.max(total-alreadyPaid,0);
+  perEl.value=Math.round(remainingAmt/remaining);
 }
 
-// 每期金額或期數變動時，自動推算總金額
+
+// ── 每期金額變動時，反推總金額 ──────────────────────────────
 function instCalcTotal(){
-  const per=parseFloat(document.getElementById('inst-per-amt').value);
-  const periods=parseInt(document.getElementById('inst-total-p').value);
-  if(per>0 && periods>0)
-    document.getElementById('inst-total-amt').value=Math.round(per*periods);
+  const per=parseFloat((document.getElementById('inst-per-amt')||{}).value);
+  const periods=parseInt((document.getElementById('inst-total-p')||{}).value);
+  const paid=parseInt((document.getElementById('inst-paid-p')||{}).value)||0;
+  if(!per||!periods) return;
+  // 總金額 = 已付金額 + 剩餘期數 × 新每期
+  const alreadyPaid=instGetActualPaid();
+  document.getElementById('inst-total-amt').value=Math.round(alreadyPaid+per*(periods-paid));
+}
+
+
+// ── 摘要區塊：即時顯示已付 / 剩餘應付 / 剩餘期數 ────────────
+function instUpdateSummary(){
+  const summaryEl=document.getElementById('inst-form-summary');
+  if(!summaryEl) return;
+  const total=parseFloat((document.getElementById('inst-total-amt')||{}).value)||0;
+  const periods=parseInt((document.getElementById('inst-total-p')||{}).value)||0;
+  const paid=parseInt((document.getElementById('inst-paid-p')||{}).value)||0;
+  const remaining=Math.max(periods-paid,0);
+  if(!total&&!periods){ summaryEl.style.display='none'; return; }
+  const alreadyPaid=instGetActualPaid();
+  const remainingAmt=Math.max(total-alreadyPaid,0);
+  summaryEl.style.display='';
+  document.getElementById('inst-disp-paid').textContent=`NT$${fmt(alreadyPaid)}`;
+  document.getElementById('inst-disp-remaining').textContent=`NT$${fmt(remainingAmt)}`;
+  document.getElementById('inst-disp-periods').textContent=`${remaining} 期`;
+}
+
+
+// ── 統一入口：所有欄位 oninput 都呼叫這裡 ───────────────────
+function instRefresh(){
+  instCalcPer();
+  instUpdateSummary();
 }
 
 
