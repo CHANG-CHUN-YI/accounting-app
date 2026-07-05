@@ -61,7 +61,9 @@ function openEditInst(id){
   instEmoji=inst.e||'💳';
   document.getElementById('inst-emoji-btn').textContent=instEmoji;
   document.getElementById('inst-name-inp').value=inst.name;
-  document.getElementById('inst-total-amt').value=inst.totalAmount||'';
+  // totalAmount 若是舊資料（Supabase 欄位不存在）就退回每期×期數
+  const totalAmt=inst.totalAmount||(inst.perAmount*inst.totalPeriods)||0;
+  document.getElementById('inst-total-amt').value=totalAmt||'';
   document.getElementById('inst-per-amt').value=inst.perAmount;
   document.getElementById('inst-orig-per-amt').value=inst.perAmount;
   // 從實際交易記錄計算已付金額（比 paidPeriods × perAmount 更精準）
