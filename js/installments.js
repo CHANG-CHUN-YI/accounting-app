@@ -265,11 +265,21 @@ function renderInsts(){
   }
   const active=insts.filter(i=>i.status==='active');
   const done=insts.filter(i=>i.status==='done');
+  // 一次撈所有支出交易，renderCard 共用（避免每張卡片各自查詢）
+  const instAllTxs=getBookTxs().filter(t=>t.type==='expense');
   const renderCard=inst=>{
+    const totalAmt=inst.totalAmount||(inst.perAmount*inst.totalPeriods)||0;
     const pct=inst.totalPeriods?Math.round(inst.paidPeriods/inst.totalPeriods*100):0;
     const remain=inst.totalPeriods-inst.paidPeriods;
-    const remainAmt=remain*inst.perAmount;
     const isDone=inst.status==='done';
+    // 從實際交易記錄計算已付金額（最精準，不受每期金額不一致影響）
+    const nameRe=new RegExp(`^\\[分期\\] ${inst.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} 第\\d+期$`);
+    const actualPaid=instAllTxs
+      .filter(t=>t.instId===inst.id||(!t.instId&&nameRe.test(t.note||'')))
+      .reduce((s,t)=>s+Number(t.amount),0);
+    const remainAmt=Math.max(totalAmt-actualPaid,0);
+    // 每期金額：剩餘金額 ÷ 剩餘期數（反映實際現況）；無記錄時用 inst.perAmount
+    const perAmt=remain>0?(actualPaid>0?Math.round(remainAmt/remain):inst.perAmount):0;
     // 計算下一期日期
     const nextDate=inst.paidPeriods<inst.totalPeriods?getNextPayDate(inst):'—';
     return `<div class="inst-card">
@@ -291,7 +301,7 @@ function renderInsts(){
       <div class="inst-stats">
         <div class="inst-stat">
           <div class="inst-stat-label">每期金額</div>
-          <div class="inst-stat-val" style="color:var(--blue-d);">NT$${fmt(inst.perAmount)}</div>
+          <div class="inst-stat-val" style="color:var(--blue-d);">NT$${fmt(perAmt)}</div>
         </div>
         <div class="inst-stat">
           <div class="inst-stat-label">剩餘金額</div>
