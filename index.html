@@ -721,10 +721,18 @@ select,input{font-family:inherit;}
     <button id="inst-emoji-btn" onclick="openMo('mo-inst-emoji')" style="width:44px;height:44px;border-radius:12px;border:1.5px solid var(--border);font-size:1.3rem;flex-shrink:0;">💳</button>
     <input class="mi" type="text" id="inst-name-inp" placeholder="名稱（如：iPhone 分期、車貸）" style="flex:1;">
   </div>
-  <label class="ml">每期金額（NT$）</label>
-  <input class="mi" type="number" id="inst-per-amt" placeholder="例：3000" inputmode="decimal">
-  <label class="ml">總期數</label>
-  <input class="mi" type="number" id="inst-total-p" placeholder="例：12" inputmode="numeric" min="1">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+    <div>
+      <label class="ml">總金額（NT$）</label>
+      <input class="mi" type="number" id="inst-total-amt" placeholder="例：36000" inputmode="decimal" oninput="instCalcPer()">
+    </div>
+    <div>
+      <label class="ml">總期數</label>
+      <input class="mi" type="number" id="inst-total-p" placeholder="例：12" inputmode="numeric" min="1" oninput="instCalcPer()">
+    </div>
+  </div>
+  <label class="ml">每期金額（NT$）<span style="color:var(--text3);font-size:.75rem;"> 可自行調整</span></label>
+  <input class="mi" type="number" id="inst-per-amt" placeholder="自動計算，亦可直接輸入" inputmode="decimal" oninput="instCalcTotal()">
   <label class="ml">已付期數（已還幾期）</label>
   <input class="mi" type="number" id="inst-paid-p" placeholder="0" value="0" inputmode="numeric" min="0">
   <label class="ml">開始日期</label>
@@ -734,6 +742,8 @@ select,input{font-family:inherit;}
   <label class="ml">備註</label>
   <input class="mi" type="text" id="inst-note-inp" placeholder="選填">
   <input type="hidden" id="inst-edit-id">
+  <input type="hidden" id="inst-orig-per-amt">
+  <input type="hidden" id="inst-actual-paid-amt">
   <button class="mb primary" id="inst-submit-btn" onclick="submitInst()">建立分期</button>
 </div></div>
 
@@ -741,6 +751,21 @@ select,input{font-family:inherit;}
 <div class="mo" id="mo-inst-emoji" onclick="bgClose(event,'mo-inst-emoji')"><div class="md">
   <div class="md-title">選擇圖示 <button class="md-close" onclick="closeMo('mo-inst-emoji')">✕</button></div>
   <div class="eg" id="inst-eg-grid"></div>
+</div></div>
+
+<!-- 本期付款確認彈窗 -->
+<div class="mo" id="mo-pay-inst" onclick="bgClose(event,'mo-pay-inst')"><div class="md">
+  <div class="md-title">本期付款 <button class="md-close" onclick="closeMo('mo-pay-inst')">✕</button></div>
+  <div style="text-align:center;margin-bottom:1.1rem;">
+    <div style="font-size:1.05rem;font-weight:600;" id="pay-inst-name-disp"></div>
+    <div style="color:var(--text3);font-size:.82rem;margin-top:3px;">第 <span id="pay-inst-period-disp"></span> 期</div>
+  </div>
+  <label class="ml">實際付款金額（NT$）</label>
+  <input class="mi" type="number" id="pay-inst-amount" inputmode="decimal" placeholder="輸入本期實際金額">
+  <label class="ml">付款日期</label>
+  <input class="mi" type="date" id="pay-inst-date">
+  <input type="hidden" id="pay-inst-id-val">
+  <button class="mb primary" onclick="confirmPayInst()">✓ 確認付款</button>
 </div></div>
 
 <div class="mo" id="mo-clear" onclick="bgClose(event,'mo-clear')"><div class="md">
