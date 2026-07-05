@@ -202,7 +202,9 @@ const DB={
     if(error||!data) return null;
     return data.map(r=>({
       id:r.id, bookId:r.book_id, name:r.name, e:r.emoji||'💳',
-      totalAmount:r.total_amount, perAmount:r.per_amount,
+      // total_amount 欄位若不存在（migration 未跑），退回用每期×總期數估算
+      totalAmount:r.total_amount||(r.per_amount*r.total_periods)||0,
+      perAmount:r.per_amount,
       totalPeriods:r.total_periods, paidPeriods:r.paid_periods,
       startDate:r.start_date, catId:r.cat_id||'other',
       note:r.note||'', status:r.status||'active',
