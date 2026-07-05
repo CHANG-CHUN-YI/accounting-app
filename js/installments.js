@@ -37,8 +37,6 @@ function openAddInst(){
   document.getElementById('inst-per-amt').value='';
   document.getElementById('inst-total-p').value='';
   document.getElementById('inst-total-amt').value='';
-  document.getElementById('inst-orig-per-amt').value='';
-  document.getElementById('inst-actual-paid-amt').value='0';
   document.getElementById('inst-paid-p').value='0';
   document.getElementById('inst-start-date').value=today();
   document.getElementById('inst-note-inp').value='';
@@ -61,17 +59,9 @@ function openEditInst(id){
   instEmoji=inst.e||'💳';
   document.getElementById('inst-emoji-btn').textContent=instEmoji;
   document.getElementById('inst-name-inp').value=inst.name;
-  // totalAmount 若是舊資料（Supabase 欄位不存在）就退回每期×期數
   const totalAmt=inst.totalAmount||(inst.perAmount*inst.totalPeriods)||0;
   document.getElementById('inst-total-amt').value=totalAmt||'';
   document.getElementById('inst-per-amt').value=inst.perAmount;
-  document.getElementById('inst-orig-per-amt').value=inst.perAmount;
-  // 從實際交易記錄計算已付金額（比 paidPeriods × perAmount 更精準）
-  const nameRe=new RegExp(`^\\[分期\\] ${inst.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} 第\\d+期$`);
-  const actualPaid=getBookTxs()
-    .filter(t=>t.type==='expense'&&(t.instId===id||(!t.instId&&nameRe.test(t.note||''))))
-    .reduce((s,t)=>s+Number(t.amount),0);
-  document.getElementById('inst-actual-paid-amt').value=actualPaid;
   document.getElementById('inst-total-p').value=inst.totalPeriods;
   document.getElementById('inst-paid-p').value=inst.paidPeriods;
   document.getElementById('inst-start-date').value=inst.startDate||today();
@@ -86,23 +76,39 @@ function openEditInst(id){
 
 
 // 總金額或期數變動時，自動推算每期金額
-// 有已付期數：優先用實際交易記錄算已付總額，找不到才用原每期×期數估算
-// 尚未付款：直接 總金額 ÷ 總期數
+// 直接從 DB 查詢實際已付金額，不依賴隱藏欄位（隱藏欄位若不存在會靜靜拋錯）
 function instCalcPer(){
-  const total=parseFloat(document.getElementById('inst-total-amt').value);
-  const periods=parseInt(document.getElementById('inst-total-p').value);
-  const paid=parseInt(document.getElementById('inst-paid-p').value)||0;
+  const totalEl=document.getElementById('inst-total-amt');
+  const periodEl=document.getElementById('inst-total-p');
+  const paidEl=document.getElementById('inst-paid-p');
+  const perEl=document.getElementById('inst-per-amt');
+  if(!totalEl||!periodEl||!paidEl||!perEl) return;
+
+  const total=parseFloat(totalEl.value);
+  const periods=parseInt(periodEl.value);
+  const paid=parseInt(paidEl.value)||0;
   const remaining=periods-paid;
-  if(!total||remaining<=0) return;
+  if(!total||!periods||remaining<=0) return;
+
   if(paid>0){
-    const actualPaid=parseFloat(document.getElementById('inst-actual-paid-amt').value)||0;
-    const origPer=parseFloat(document.getElementById('inst-orig-per-amt').value)||0;
-    // 優先用交易記錄實際金額，無記錄時退回原每期×期數估算
-    const alreadyPaid=actualPaid>0?actualPaid:(origPer*paid);
+    // 從 DB 查詢實際已付金額（最精準）
+    const editId=(document.getElementById('inst-edit-id')||{}).value||'';
+    let alreadyPaid=0;
+    if(editId){
+      const inst=DB.getInsts().find(i=>i.id===editId);
+      if(inst){
+        const nameRe=new RegExp(`^\\[分期\\] ${inst.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} 第\\d+期$`);
+        alreadyPaid=getBookTxs()
+          .filter(t=>t.type==='expense'&&(t.instId===editId||(!t.instId&&nameRe.test(t.note||''))))
+          .reduce((s,t)=>s+Number(t.amount),0);
+      }
+    }
+    // 找不到交易記錄時，用目前每期金額×期數估算
+    if(!alreadyPaid) alreadyPaid=(parseFloat(perEl.value)||0)*paid;
     const remainingAmt=Math.max(total-alreadyPaid,0);
-    document.getElementById('inst-per-amt').value=Math.round(remainingAmt/remaining);
+    perEl.value=Math.round(remainingAmt/remaining);
   } else {
-    document.getElementById('inst-per-amt').value=Math.round(total/periods);
+    perEl.value=Math.round(total/periods);
   }
 }
 
