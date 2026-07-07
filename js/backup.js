@@ -210,7 +210,9 @@ let _realtimeChannel = null;
 
 function setupRealtime(){
   if(!isCloud()) return;
-  // 如果已有頻道先清除
+  // 清除舊的輪詢（避免 Realtime 恢復後輪詢仍在跑）
+  if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; }
+  // 清除舊的頻道
   if(_realtimeChannel){
     _sb.removeChannel(_realtimeChannel);
     _realtimeChannel = null;
@@ -277,19 +279,38 @@ function setupRealtime(){
 }
 
 
-// Realtime 不可用時改用輪詢（每 30 秒自動更新）
+// Realtime 不可用時改用輪詢（3 分鐘更新一次，減少耗電）
+const POLL_INTERVAL = 180000;
 let _pollTimer = null;
 
 function startPolling(){
   if(_pollTimer) return;
+  if(document.hidden) return; // 頁面在背景時不啟動
   _pollTimer = setInterval(async()=>{
-    if(!isCloud()) return;
+    if(!isCloud() || document.hidden) return; // 在背景時跳過本次輪詢
     await DB.fetchTxs();
     renderHome();
-    // 如果停在共同帳本也更新
     if(isSharedBook) await fetchSharedTxsForBook(curBook);
-  }, 30000);
+  }, POLL_INTERVAL);
 }
+
+
+// ── Page Visibility API ──────────────────────────────────────
+// 進入背景（鎖屏、切換 App）：立即斷開所有連線，避免耗電
+// 回到前台：重新建立連線並更新資料
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    // 進背景：停止輪詢、關閉 WebSocket
+    if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; }
+    if(_realtimeChannel){ _sb.removeChannel(_realtimeChannel); _realtimeChannel=null; }
+  } else {
+    // 回前台：重新連線，並補抓離線期間錯過的資料
+    if(isCloud()){
+      setupRealtime();
+      DB.fetchTxs().then(()=>{ renderHome(); renderBudget(); });
+    }
+  }
+});
 
 
 function scheduleAutoBackup(){
@@ -436,4 +457,5 @@ function refreshBackupTime(){
   const el = document.getElementById('last-backup-time');
   if(el) el.textContent = t||'從未備份';
 }
+
 
