@@ -313,6 +313,24 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 
+// ── 網路狀態偵測 ─────────────────────────────────────────────
+// 飛航模式或斷網時停止所有背景活動
+// 恢復網路時重新連線並同步資料
+window.addEventListener('offline', ()=>{
+  if(_pollTimer){ clearInterval(_pollTimer); _pollTimer=null; }
+  if(_realtimeChannel){ _sb.removeChannel(_realtimeChannel); _realtimeChannel=null; }
+  const badge=document.getElementById('mode-badge');
+  if(badge) badge.textContent='☁️ 離線中';
+});
+
+window.addEventListener('online', ()=>{
+  if(isCloud()){
+    setupRealtime();
+    DB.fetchTxs().then(()=>{ renderHome(); renderBudget(); });
+  }
+});
+
+
 function scheduleAutoBackup(){
   const lastBackup = localStorage.getItem('lastBackupDate');
   const todayStr = today();
@@ -457,5 +475,4 @@ function refreshBackupTime(){
   const el = document.getElementById('last-backup-time');
   if(el) el.textContent = t||'從未備份';
 }
-
 
